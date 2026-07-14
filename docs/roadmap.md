@@ -3,7 +3,7 @@
 > TSE stajı kapsamında hazırlanan, Jetson AI Lab görevinden ilham alan ve donanımsız
 > (PC/API tabanlı) olarak uyarlanmış birleşik proje planı.
 >
-> **Etiketler:** 🟢 Çekirdek (mutlaka bitmeli) — 🟡 Önemli (zaman kalırsa) — ⚪ Stretch/Opsiyonel (gelecek çalışma)
+> **Etiketler:**  Çekirdek (mutlaka bitmeli) —  Önemli (zaman kalırsa) —  Stretch/Opsiyonel (gelecek çalışma)
 
 ---
 
@@ -38,7 +38,7 @@ Bu paragraf projenin amacını ilk bakışta anlatır; rapor ve sunum yazarken b
 
 ## Faz 0 — Temel Araştırma, Literatür ve Mimari Tasarım
 
-### Task 0.1 — LLM Temellerini Tekrar Et 🟢
+### Task 0.1 — LLM Temellerini Tekrar Et 
 - [ ] Transformer
 - [ ] Attention Mechanism
 - [ ] Token / Context Window
@@ -47,7 +47,7 @@ Bu paragraf projenin amacını ilk bakışta anlatır; rapor ve sunum yazarken b
 - **Kaynaklar:** Attention Is All You Need, Illustrated Transformer (Jay Alammar), Hugging Face NLP Course
 - **Çıktı:** 2-3 sayfalık özet + kavram notları
 
-### Task 0.2 — Embedding Kavramı 🟢
+### Task 0.2 — Embedding Kavramı 
 - [ ] Embedding nedir?
 - [ ] Semantic / Similarity Search
 - [ ] Cosine Similarity
@@ -55,14 +55,14 @@ Bu paragraf projenin amacını ilk bakışta anlatır; rapor ve sunum yazarken b
 - **Kaynaklar:** Pinecone Learn, ChromaDB Docs, Sentence Transformers
 - **Çıktı:** Embedding mantığını açıklayan kısa not
 
-### Task 0.3 — Vector Database 🟢
+### Task 0.3 — Vector Database 
 - [ ] ChromaDB
 - [ ] FAISS
 - [ ] Milvus
 - [ ] Weaviate
 - **Çıktı:** Avantaj/dezavantaj/kullanım alanı karşılaştırma tablosu
 
-### Task 0.4 — Multimodal & Benchmarking Kavramları 🟢 *(Jetson AI Lab arşivinden, donanımsız)*
+### Task 0.4 — Multimodal & Benchmarking Kavramları  *(Jetson AI Lab arşivinden, donanımsız)*
 - [ ] Text (LLM)
 - [ ] Text + Vision (VLM)
 - [ ] Gen AI Benchmarking
@@ -73,7 +73,7 @@ Bu paragraf projenin amacını ilk bakışta anlatır; rapor ve sunum yazarken b
 - **Kaynak:** jetson-ai-lab.com/archive/index.html
 - **Çıktı:** Kısa notlar + sözlü/yazılı mini anlatım (en fazla 2 gün hedefle)
 
-### Task 0.5 — Sistem Mimarisi Tasarımı 🟢 *(koda geçmeden önce)*
+### Task 0.5 — Sistem Mimarisi Tasarımı  *(koda geçmeden önce)*
 Araştırma bitince doğrudan kodlamaya geçmek yerine sistemi kağıt üzerinde tasarla:
 - [ ] Kullanıcı isteğinin uçtan uca akışı
 - [ ] Agent workflow (karar noktaları)
@@ -91,7 +91,7 @@ Araştırma bitince doğrudan kodlamaya geçmek yerine sistemi kağıt üzerinde
 
 ---
 
-## Faz 1 — Klasik RAG 🟢
+## Faz 1 — Klasik RAG 
 
 | Task | Konu | Araştırılacaklar |
 |---|---|---|
@@ -107,41 +107,41 @@ Araştırma bitince doğrudan kodlamaya geçmek yerine sistemi kağıt üzerinde
 
 ---
 
-## Faz 2 — Agentic RAG 🟢
+## Faz 2 — Agentic RAG 
 
 | Task | Konu | Araştırılacaklar |
 |---|---|---|
 | 2.1 | Agent kavramı | Workflow, Planning, Tool Calling — LangGraph / OpenAI Agents / Anthropic Tool Use |
-| 2.2 | Tool Calling & MCP 🟡 | LLM'nin araç çağırma mantığı — PDF Search, Web Search, Calculator, Python, Vision Model; **MCP (Model Context Protocol)**, Tool Registry, Function Calling, Structured Output — güncel agent sistemlerinin standart yaklaşımı |
+| 2.2 | Tool Calling & MCP  | LLM'nin araç çağırma mantığı — PDF Search, Web Search, Calculator, Python, Vision Model; **MCP (Model Context Protocol)**, Tool Registry, Function Calling, Structured Output — güncel agent sistemlerinin standart yaklaşımı |
 | 2.3 | LangGraph | State, Node, Edge, Conditional Edge → agent workflow kurma |
-| 2.4 | Memory (genişletilmiş) 🟡 | Session Memory, Persistent Memory, User Profile Memory, Retrieval Memory (basit "Conversation Memory" yerine bu ayrımı kullan) |
+| 2.4 | Memory (genişletilmiş)  | Session Memory, Persistent Memory, User Profile Memory, Retrieval Memory (basit "Conversation Memory" yerine bu ayrımı kullan) |
 | 2.5 | Multi-step Reasoning | ReAct, Plan and Execute, Reflection, Self Correction |
 
 **Faz çıktısı:** Soruya göre doğru aracı otomatik seçen agent yapısı.
 
 ---
 
-## Faz 3 — Multimodal 🟢 *(Jetson görevinden uyarlanmış, donanımsız)*
+## Faz 3 — Multimodal  *(Jetson görevinden uyarlanmış, donanımsız)*
 
-### Task 3.1 — Vision Language Models 🟢
+### Task 3.1 — Vision Language Models 
 - [ ] Qwen2.5-VL (ör. 3B) / Qwen3-VL (ör. 2B) — küçük/quantized sürüm ya da API
 - [ ] LLaVA
 - **Not:** GPU yetersizse API üzerinden VLM çağırmak (Anthropic/OpenAI/Qwen API) tercih edilebilir — model performansı değerlendirme kriteri değil, odak agent/RAG mantığında.
 
-### Task 3.2 — Image Understanding 🟢
+### Task 3.2 — Image Understanding 
 - [ ] Resim yükleme
 - [ ] Görsel açıklama üretme
 - [ ] Görsel üzerinden soru-cevap
 
-### Task 3.3 — PDF İçindeki Görseller 🟡
+### Task 3.3 — PDF İçindeki Görseller 
 - [ ] Metin ve görselleri birlikte yorumlama
 
-### Task 3.4 — Video + Frame + VLM (Gradio) 🟢 ⭐ ana demo
+### Task 3.4 — Video + Frame + VLM (Gradio)  ana demo
 Basit hâli:
 ```
 Video → Frame Extraction → VLM → Yanıt
 ```
-Daha gerçekçi hâli (Temporal Reasoning) 🟡:
+Daha gerçekçi hâli (Temporal Reasoning) :
 ```
 Video → Frame Extraction → Frame Selection → VLM (çoklu frame) → LLM (özet/akıl yürütme) → Yanıt
 ```
@@ -156,7 +156,7 @@ temporal sürüme geç.
 - [ ] (Opsiyonel) Birden fazla frame varsa LLM ile özetleyip tek yanıt üretilmeli
 - [ ] Yanıt arayüzde gösterilmeli
 
-### Task 3.5 — OCR 🟡 *(taranmış PDF/görsel içindeki metin için)*
+### Task 3.5 — OCR  *(taranmış PDF/görsel içindeki metin için)*
 - [ ] PaddleOCR
 - [ ] EasyOCR
 - **Bağlantı:** Faz 1.1'deki PDF yüklemede taranmış sayfa tespit edilirse bu adım devreye girer.
@@ -165,29 +165,29 @@ temporal sürüme geç.
 
 ---
 
-## Faz 4 — Web Search / Hybrid RAG 🟢
+## Faz 4 — Web Search / Hybrid RAG 
 
 - [ ] Task 4.1 — Web Search Tool: Tavily, SerpAPI, DuckDuckGo Search
 - [ ] Task 4.2 — Hybrid RAG: Agent'ın "doküman yeterli mi / internet gerekli mi" kararı vermesi
-- [ ] Task 4.3 — Knowledge Graph ⚪ *(opsiyonel/gelecek çalışma — şimdilik şart değil)*
+- [ ] Task 4.3 — Knowledge Graph  *(opsiyonel/gelecek çalışma — şimdilik şart değil)*
   - İleride: Hybrid RAG → Knowledge Graph → Vector Search birlikte kullanılabilir.
 
 **Faz çıktısı:** Dokümanın yetersiz kaldığı durumlarda otomatik olarak web'e başvuran hybrid RAG sistemi.
 
 ---
 
-## Faz 5 — Arayüz (Gradio) 🟢
+## Faz 5 — Arayüz (Gradio) 
 
 - [ ] Task 5.1 — Sohbet ekranı, PDF yükleme, görsel yükleme, cevap ekranı
 - [ ] Task 5.2 — Streaming (cevap yazılırken ekrana akması)
 - [ ] Task 5.3 — Kaynak gösterme: sayfa numarası, dosya adı, kullanılan araç
-- [ ] Task 5.4 — Log paneli 🟡: Agent hangi tool'u çağırdı, kaç saniye sürdü, hangi doküman kullanıldı — ayrı bir panelde gösterilirse sunumda etkileyici olur.
+- [ ] Task 5.4 — Log paneli : Agent hangi tool'u çağırdı, kaç saniye sürdü, hangi doküman kullanıldı — ayrı bir panelde gösterilirse sunumda etkileyici olur.
 
 **Faz çıktısı:** Uçtan uca kullanılabilir bir Gradio arayüzü — sohbet, dosya yükleme, streaming, kaynak gösterme bir arada.
 
 ---
 
-## Faz 6 — Değerlendirme (Evaluation) 🟢 *(sistem tamamen çalışır hâle geldikten sonra)*
+## Faz 6 — Değerlendirme (Evaluation)  *(sistem tamamen çalışır hâle geldikten sonra)*
 
 - [ ] Task 6.1 — RAG Evaluation: Faithfulness, Context Precision, Context Recall, Answer Relevancy
 - [ ] Task 6.2 — Benchmark araçları: RAGAS, DeepEval, LangSmith
@@ -196,7 +196,7 @@ temporal sürüme geç.
 
 ---
 
-## Faz 7 — Deployment 🟡
+## Faz 7 — Deployment 
 
 - [ ] Docker
 - [ ] Docker Compose
@@ -223,9 +223,9 @@ temporal sürüme geç.
 
 ## Öncelik Sıralaması (zaman kısıtlıysa)
 
-1. 🟢 Use Case + Faz 0 + Faz 1 + Faz 2 + Faz 3 (basit video demo) + Faz 5.1-5.3 → **minimum sunulabilir ürün**
-2. 🟡 Faz 2 MCP/Memory genişletmesi, Faz 3 temporal reasoning + OCR, Faz 5.4 log paneli, Faz 7 deployment → **zaman kalırsa**
-3. ⚪ Faz 4.3 Knowledge Graph → **gelecek çalışma olarak raporda bahsedilebilir, uygulanması şart değil**
+1.  Use Case + Faz 0 + Faz 1 + Faz 2 + Faz 3 (basit video demo) + Faz 5.1-5.3 → **minimum sunulabilir ürün**
+2.  Faz 2 MCP/Memory genişletmesi, Faz 3 temporal reasoning + OCR, Faz 5.4 log paneli, Faz 7 deployment → **zaman kalırsa**
+3.  Faz 4.3 Knowledge Graph → **gelecek çalışma olarak raporda bahsedilebilir, uygulanması şart değil**
 
 ---
 
