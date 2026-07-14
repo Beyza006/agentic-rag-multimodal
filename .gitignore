@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+chroma_db/
+*.mp4
+*.pdf
+outputs/

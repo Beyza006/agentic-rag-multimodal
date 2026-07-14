@@ -1,0 +1,13 @@
+# Faz 1
+pymupdf
+chromadb
+sentence-transformers
+langchain
+
+# Faz 2
+langgraph
+
+# Faz 3
+gradio
+opencv-python
+pillow
