@@ -1,3 +1,5 @@
+# Faz 0 — Araştırma Notları
+
 ## Task 0.1 — LLM Temelleri
 
 - Transformer: Vaswani ve arkadaşları tarafından 2017 yılında "Attention Is All You Need" makalesiyle tanıtılan, girdi dizisini ardışık değil paralel olarak işleyen bir sinir ağı mimarisidir. RNN ve LSTM gibi tekrarlayan (recurrent) yapıların aksine, dizideki tüm elemanlar arasındaki ilişkiyi self-attention mekanizması aracılığıyla eşzamanlı olarak hesaplar. Bu sayede hem eğitim süresi kısalır hem de uzun mesafeli bağımlılıklar (long-range dependencies) daha etkili biçimde modellenir. Mimari, encoder ve decoder olmak üzere iki ana bloktan oluşur.
@@ -21,3 +23,48 @@
 - Cosine Similarity: İki vektör arasındaki açının kosinüsünü hesaplayarak benzerlik ölçen bir metriktir. Değer aralığı -1 ile 1 arasındadır; 1'e yakın değerler yüksek benzerliği, 0 ilişkisizliği, -1'e yakın değerler ise zıt anlamlılığı ifade eder. Vektörlerin büyüklüğünden (magnitude) bağımsız olarak yalnızca yönlerini karşılaştırdığı için, farklı uzunluktaki metinlerin embedding'lerini karşılaştırmada tercih edilir.
 
 - Vector Search: Yüksek boyutlu bir vektör uzayında, verilen bir sorgu vektörüne en yakın (en benzer) vektörlerin bulunması işlemidir. Büyük ölçekli veri kümelerinde bu aramayı verimli hale getirmek için ANN (Approximate Nearest Neighbor) algoritmaları (örn. HNSW, IVF) kullanılır; bu algoritmalar tam (exact) arama yerine yaklaşık ama çok daha hızlı sonuçlar üretir.
+
+## Task 0.3 — Vector Database Karşılaştırması
+
+- ChromaDB: Python tabanlı, minimalist bir açık kaynak vector database'dir; sıfır konfigürasyonla bellek içi (in-memory) veya kalıcı (persistent) modda çalışabilir.
+
+- FAISS (Facebook AI Similarity Search): C++ dilinde yazılmış, Python bağlamaları sunan, ultra hızlı vektör benzerlik araması için tasarlanmış bir kütüphanedir. Bağımsız bir veritabanı değildir; yalnızca arama motorudur, metadata yönetimi ve kalıcılık gibi özellikler ayrıca inşa edilmelidir.
+
+- Milvus: Büyük ölçekli, dağıtık (distributed) mimariye sahip, production ortamları hedefleyen açık kaynak bir vector database'dir. Yatay ölçeklenebilirlik sağlar ancak kurulum/operasyonel yönetimi daha karmaşıktır.
+
+- Weaviate: Bir bilgi grafiği (knowledge graph) ve modüler makine öğrenmesi modellerini entegre eden, bulut-native bir vector database'dir. GraphQL API, gerçek zamanlı sorgular ve multimodal (metin+görsel) veri desteği sunar.
+
+| DB | Avantaj | Dezavantaj | Kullanım Alanı |
+|---|---|---|---|
+| ChromaDB | Basit kurulum, hızlı prototipleme | Sınırlı ölçeklenme, temel filtreleme | Küçük-orta ölçekli RAG, öğrenme projeleri |
+| FAISS | Çok yüksek performans, milyonlarca/milyarlarca vektörde çalışabilir | Bağımsız DB değil, metadata/kalıcılık manuel | Performans kritik, local/backend sistemler |
+| Milvus | Yüksek ölçeklenebilirlik, dağıtık deployment | Kurulum/yönetim karmaşıklığı | Büyük ölçekli production RAG, öneri sistemleri |
+| Weaviate | Hibrit arama, knowledge graph, multimodal destek | Daha ağır kurulum/öğrenme eğrisi | Kurumsal arama, soru-cevap sistemleri |
+
+**Proje Kapsamında Seçim:** Bu staj projesi kapsamında, kurulum kolaylığı, Python ekosistemiyle uyumluluğu, LangChain/LlamaIndex entegrasyon desteği ve yerel makinede bağımsız çalışabilme özellikleri göz önünde bulundurularak ChromaDB tercih edilmiştir. Veri hacminin ileride önemli ölçüde artması (milyonlarca doküman düzeyi) durumunda, Milvus gibi dağıtık mimariye sahip çözümlerin değerlendirilmesi planlanmaktadır.
+
+## Task 0.4 — Multimodal & Benchmarking (Jetson AI Lab arşivi, kavramsal seviyede)
+
+- Multimodal AI nedir: Birden fazla veri modalitesini (metin, görsel, ses, video, sensör verisi vb.) eş zamanlı olarak işleyebilen ve bu modaliteler arasında anlamsal ilişki kurabilen yapay zekâ sistemlerine verilen genel addır. Tekil modaliteli (unimodal) sistemlerin aksine, farklı veri türlerinden gelen bilgiyi ortak bir temsil (embedding) uzayında birleştirerek daha kapsamlı çıkarımlar yapılmasını sağlar.
+
+- LLM ile VLM arasındaki fark: Large Language Model (LLM), yalnızca metinsel girdi üzerinde eğitilmiş ve yalnızca metinsel çıktı üretebilen bir mimaridir. Vision Language Model (VLM) ise görsel girdiyi (resim, video karesi) metinsel girdiyle birlikte işleyebilen, iki modaliteyi ortak bir gömme uzayında ilişkilendiren bir mimaridir. Bu sayede VLM, görsel soru-cevap (Visual Question Answering) ve görsel açıklama üretme (Image Captioning) gibi görevleri yerine getirebilir; LLM bu görevleri gerçekleştiremez çünkü eğitim verisi yalnızca metinden oluşur.
+
+- VLM çalışma mekanizması: VLM, görüntüyü insan algısına benzer şekilde doğrudan "görmez"; bir görüntü, bilgisayar için piksel değerlerinden oluşan sayısal bir matristir. Model önce bu piksel bilgilerini bir görüntü kodlayıcısı (vision encoder) aracılığıyla işleyerek anlamlı bir vektör temsiline (embedding) dönüştürür. Bu görsel embedding, metinsel embedding ile aynı ortak anlam uzayında ilişkilendirilerek modelin görsel içerik hakkında dil tabanlı çıkarım yapması sağlanır.
+
+- VLM temel görevleri: VLM'lerin başlıca uygulama alanları arasında resme açıklama üretme (Image Captioning), görsel içerik hakkında doğal dilde soru cevaplama (Visual Question Answering) ve OCR destekli belge anlama (bir belgedeki yazı, tablo ve grafiği birlikte yorumlama) yer alır.
+
+- Vision Transformer (ViT) temel mantığı: ViT, orijinal Transformer mimarisinin görüntü işleme alanına uyarlanmış halidir. Görüntü, sabit boyutlu karelere (patch) bölünür; her patch düzleştirilip doğrusal bir projeksiyonla bir embedding vektörüne dönüştürülür. Bu patch embedding'leri, bir cümledeki kelime token'larına benzer şekilde ele alınarak self-attention katmanlarından geçirilir. Bu yaklaşım, evrişimli sinir ağlarının (CNN) yerel filtre tabanlı işleyişinin aksine, görüntünün farklı bölgeleri arasındaki global ilişkilerin doğrudan modellenmesine imkân tanır.
+
+- Image Generation kavramı: Metinsel bir açıklamadan (prompt) yeni bir görsel içerik üretme sürecidir. Günümüzde en yaygın yaklaşım, gürültülü bir görüntüyü adım adım anlamlı bir görüntüye dönüştüren difüzyon modelleridir (diffusion models); bu modeller eğitim sırasında bir görüntüye kademeli olarak gürültü eklemeyi öğrenir, üretim sırasında ise bu süreci tersine çevirerek rastgele gürültüden görüntü sentezler.
+
+- Audio Language Models: Ses verisini girdi ve/veya çıktı olarak işleyebilen model ailesidir. İki temel görev öne çıkar: Automatic Speech Recognition (ASR) konuşma sesini metne dönüştürür; Text-to-Speech (TTS) ise metni doğal insan sesine benzer bir ses çıktısına dönüştürür.
+
+- GenAI Benchmarking kavramı: Üretken yapay zekâ modellerinin performansının, farklı model veya donanım konfigürasyonları arasında standart ölçütlerle karşılaştırılması sürecidir. Bu ölçütler genellikle modelin çıktı doğruluğundan (accuracy) ziyade çalışma zamanı performansına odaklanır; başlıca metrikler throughput (birim zamanda üretilen token sayısı) ve latency'dir (yanıtın üretilmeye başlama süresi). Özellikle donanım kaynaklarının sınırlı olduğu edge cihazlarda (örn. NVIDIA Jetson), bu metrikler modelin pratikte kullanılabilir olup olmadığını belirlemede kritik rol oynar.
+
+- Jetson AI Lab arşivi notları (genel): NVIDIA Jetson AI Lab arşivi, farklı modalitelere (metin, görsel, ses) yönelik üretken yapay zekâ modellerinin kaynak kısıtlı edge cihazlar üzerinde nasıl çalıştırılabileceğine dair pratik rehberler sunmaktadır. Bu içerikler, belirli bir model seçiminden bağımsız olarak, multimodal bir sistemin bileşenlerinin (LLM, VLM, embedding, vector database, ASR/TTS) genel mimari içindeki rolünü kavramaya yöneliktir.
+
+- Projede multimodal kullanım planı: Geliştirilecek Agentic RAG sisteminde kullanıcı yalnızca PDF/Word değil, görsel ve video da yükleyebilecektir. Agent, gelen sorunun niteliğini analiz ederek uygun aracı otomatik seçecektir: soru bir görsel/grafiğe ilişkinse Vision Tool (VLM), soru bir doküman içeriğine ilişkinse RAG mekanizması devreye girecektir.
+
+- Video QA yaklaşımı: Video verisi, boyutu ve işlem yükü nedeniyle doğrudan modele gönderilmez; bunun yerine önce anlamlı karelere (frame) ayrıştırılır ve bu kareler VLM'e iletilir. Sorunun tek bir ana ilişkin olması durumunda (örn. "elinde ne var?") tek kare yeterli olabilirken, sorunun zaman içindeki bir olay dizisini kapsaması durumunda (örn. "kapıyı açmadan önce ne yaptı?") birden fazla karenin birlikte değerlendirilmesi gerekir; bu yaklaşım ileride Temporal Reasoning (zamansal akıl yürütme) olarak ele alınacaktır.
+
+> Not: Bu aşamada model seçimi yapılmadı (Qwen, LLaVA vb.) — model seçimi, proje gereksinimleri netleştikten ve prototip geliştirme aşamasına geçildikten sonra farklı alternatiflerin denenmesiyle (deneme-yanılma) yapılacaktır.
