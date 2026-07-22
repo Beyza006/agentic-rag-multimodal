@@ -6,4 +6,5 @@ __pycache__/
 chroma_db/
 *.mp4
 *.pdf
+data/processed/*.json
 outputs/
