@@ -68,3 +68,19 @@
 - Video QA yaklaşımı: Video verisi, boyutu ve işlem yükü nedeniyle doğrudan modele gönderilmez; bunun yerine önce anlamlı karelere (frame) ayrıştırılır ve bu kareler VLM'e iletilir. Sorunun tek bir ana ilişkin olması durumunda (örn. "elinde ne var?") tek kare yeterli olabilirken, sorunun zaman içindeki bir olay dizisini kapsaması durumunda (örn. "kapıyı açmadan önce ne yaptı?") birden fazla karenin birlikte değerlendirilmesi gerekir; bu yaklaşım ileride Temporal Reasoning (zamansal akıl yürütme) olarak ele alınacaktır.
 
 > Not: Bu aşamada model seçimi yapılmadı (Qwen, LLaVA vb.) — model seçimi, proje gereksinimleri netleştikten ve prototip geliştirme aşamasına geçildikten sonra farklı alternatiflerin denenmesiyle (deneme-yanılma) yapılacaktır.
+
+## Faz 2 — Agentic RAG
+
+### Task 2.1 — Agent Kavramı
+
+- Agent (Yapay Zekâ Ajanı) nedir: Bir LLM'in plan yapmak, araç (tool) çağırmak ve durumu (state) takip etmek amacıyla bir döngü (loop) içinde çalıştırıldığı sistemdir. Sıradan bir sohbet botundan (chatbot) temel farkı, agent'ın yalnızca metin üretmekle kalmayıp eylemde bulunabilmesi ve bu eylemlerin sonucunu doğrulayabilmesidir. Tipik bir agent döngüsü şu adımları izler: girdiyi analiz etme, bir sonraki adımı planlama, gerekli aracı çağırma, sonucu gözlemleme ve gerekirse planı güncelleme.
+
+- Workflow ile Agent Arasındaki Fark: Anthropic'in "Building Effective AI Agents" adlı makalesinde yapılan ayrıma göre, workflow'lar LLM'lerin önceden tanımlanmış, sabit kod yolları üzerinden yönlendirildiği sistemlerdir; agent'lar ise LLM'lerin kendi süreçlerini ve araç kullanımını çalışma zamanında (runtime) dinamik olarak yönettiği sistemlerdir. Workflow'larda adım sırası ve kullanılacak araçlar önceden bellidir; agent'larda ise bu kararlar her çalıştırmada girdiye göre değişebilir. Anthropic, karmaşıklığın gerekmediği durumlarda workflow'ların varsayılan/önerilen yaklaşım olduğunu, agent'ların ise daha az öngörülebilir, daha açık uçlu görevler için tercih edilmesi gerektiğini belirtmektedir.
+
+- Planning (Planlama): Bir agent'ın, kullanıcı isteğini karşılamak için hangi adımların hangi sırayla izleneceğine karar verme sürecidir. Daha gelişmiş sistemlerde bu karar, görev bağlamına göre dinamik olarak inşa edilen bir karar ağacı şeklinde işler; yani agent, sabit bir kural kümesi yerine mevcut duruma göre bir sonraki adımı belirler.
+
+- Tool Calling (Araç Çağırma): LLM'in, kullanıcı isteğini önceden tanımlanmış araç şemalarıyla (genellikle JSON Schema formatında) karşılaştırarak hangi aracı hangi parametrelerle çağıracağını yapılandırılmış bir çıktı (structured output) olarak üretmesi sürecidir. Önemli bir ayrıntı: LLM aracı doğrudan çalıştırmaz; yalnızca "şu araç, şu parametrelerle çağrılsın" şeklinde bir istek üretir, asıl çalıştırma işlemini agent'ı yöneten kod (bizim projemizde LangGraph) gerçekleştirir.
+
+- Projemizle bağlantısı: Faz 1'de kurduğumuz sistem (PDF yükleme → chunking → embedding → arama → cevap üretme) teknik olarak bir workflow'dur; adımlar her seferinde aynı sabit sırayla işlemektedir. Faz 2'de kurulacak agent ise, kullanıcının sorusunun türüne göre (doküman sorusu mu, güncel bilgi mi gerektiriyor, görsel/video mu ilgilendiriyor) hangi aracın çağrılacağına çalışma zamanında karar verecektir.
+
+- Kaynaklar: LangGraph (State/Node/Edge tabanlı agent workflow kütüphanesi, Task 2.3'te detaylandırılacak), OpenAI Agents SDK ve Anthropic Tool Use (farklı sağlayıcıların tool calling mekanizmalarına dair referans noktaları).
