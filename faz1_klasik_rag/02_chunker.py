@@ -185,7 +185,16 @@ def karakter_bazli_split_ofsetli(metin: str, chunk_size: int = 500, chunk_overla
             chunklar.append({"metin": mevcut_chunk, "ofset": mevcut_chunk_ofset})
 
         overlap_metni = overlap_metnini_al(mevcut_chunk, chunk_overlap)
-        mevcut_chunk = (overlap_metni + " " + paragraf).strip() if overlap_metni else paragraf
+        # KRITIK DUZELTME: Overlap metnini yeni paragrafla BOSLUKLA degil
+        # YENI SATIRLA birlestiriyoruz. Nedeni: eger overlap tam olarak bir
+        # bendin ("d) ...") sonuna denk gelirse ve sonraki paragraf bir
+        # sonraki bendin ("e) ...") basiysa, bunlari boslukla birlestirmek
+        # ikisini TEK SATIRA yapistiriyordu - bu da bentleri_cikar
+        # fonksiyonunun (06_llm_answer.py, satir-bazli calisir) "e)"yi yeni
+        # bir bent olarak degil, "d)"nin devami olarak algilamasina yol
+        # aciyordu. Yeni satirla birlestirmek, orijinal PDF'teki satir
+        # yapisini koruyor.
+        mevcut_chunk = (overlap_metni + "\n" + paragraf).strip() if overlap_metni else paragraf
         mevcut_chunk_ofset = paragraf_ofset
 
         while len(mevcut_chunk) > chunk_size:
