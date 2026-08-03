@@ -84,6 +84,46 @@ def sayfa_bul(offset: int, sayfa_araliklari: list[tuple]) -> int:
 # YONTEM 1: Karakter-Bazli Splitter (offset takipli)
 # ============================================================
 
+def kapanis_baslik_temizle(metin: str) -> str:
+    """
+    KVKK gibi Turkce kanun metinlerinde her maddenin BASLIGI, "MADDE N"
+    ifadesinden ONCE gelir (orn. "Veri güvenliğine ilişkin yükümlülükler
+    \nMADDE 12- ..."). Bizim madde-bazli chunking'imiz "MADDE N" ifadesinden
+    tam olarak boldugu icin, N'in basligi yanlislikla N-1'in chunk'inin
+    SONUNA yapisip kaliyordu (orn. MADDE 12'nin basligi MADDE 11'in
+    sonuna sizmisti).
+
+    Bu fonksiyon, bir chunk'in EN SONUNDAKI, kisa ve noktalama isareti
+    ile bitmeyen satir(lar)i (baslik olma ihtimali yuksek) kirpar.
+    Sinirlari (offsetleri) DEGISTIRMEDEN, sadece metnin sonundaki
+    "gurultuyu" temizler - bu, sinir kaydirma yontemine gore çok daha
+    az riskli çunku BASLIK/GIRIS gibi diger chunklarin yapisini bozma
+    ihtimali yok (guvenlik kontrolu asagida).
+    """
+    orijinal = metin
+    satirlar = metin.split("\n")
+
+    while len(satirlar) >= 2:
+        son_satir = satirlar[-1].strip()
+        if son_satir and len(son_satir) < 80 and son_satir[-1] not in ",.;:":
+            satirlar.pop()
+        else:
+            break
+
+    sonuc = "\n".join(satirlar).rstrip()
+
+    # GUVENLIK KONTROLU: Eger kirpma sonucu chunk neredeyse tamamen
+    # bosaldiysa (orn. BASLIK/GIRIS chunk'inda oldugu gibi, dokuman
+    # basligi + BOLUM basligi + madde basligi UST USTE gelip hicbiri
+    # noktalama icermedigi icin TUMU kirpilabilir), bu buyuk ihtimalle
+    # GERCEK icerigi de yanlislikla sildigimiz anlamina gelir - bu
+    # durumda hicbir sey yapmadan ORIJINALI geri donuyoruz.
+    if len(sonuc) < 20:
+        return orijinal
+
+    return sonuc
+
+
 def karakter_bazli_split_ofsetli(metin: str, chunk_size: int = 500, chunk_overlap: int = 50) -> list[dict]:
     """
     Metni sabit karakter uzunluguna gore boler. Her donen chunk, girdi
@@ -219,6 +259,11 @@ def madde_bazli_split(tam_metin: str, sayfa_araliklari: list[tuple]) -> list[dic
         parca = tam_metin[baslangic_ofset:bitis_ofset].strip()
         if not parca:
             continue
+
+        # Bir sonraki maddenin basligi (varsa) bu maddenin sonuna
+        # sizmis olabilir - temizliyoruz (bkz. kapanis_baslik_temizle
+        # fonksiyonunun docstring'i).
+        parca = kapanis_baslik_temizle(parca)
 
         # parca.strip() sirasinda bastan karakter silinmis olabilir,
         # gercek baslangic ofsetini yeniden hizala
