@@ -33,6 +33,7 @@ Kullanim:
 
 import sys
 import os
+import re
 import importlib.util
 from typing import TypedDict
 
@@ -75,6 +76,17 @@ class AgentState(TypedDict):
                           # Bu oturum boyunca sorulan onceki soru-cevaplari
                           # tutar. Programi kapatinca kaybolur (kalici degil) -
                           # bu yuzden "Session Memory", "Persistent Memory" degil.
+    yansitma: str         # Task 2.5: REFLECTION - agent'in kendi cevabini
+                          # kendi kendine degerlendirdigi kisa notu tutar.
+    onerilen_madde: str   # Task 2.5: SELF-CORRECTION - reflection'in "bu
+                          # madde daha uygun olurdu" dedigi madde numarasi.
+    arama_sorgusu: str    # rag_dugumu'nde kullanilan (Memory ile
+                          # zenginlestirilmis) sorgu - duzelt_dugumu'nde
+                          # tekrar kullanilir.
+    ham_sonuc: dict        # retriever'dan donen HAM sonuc (documents +
+                          # metadatas) - duzelt_dugumu, YENIDEN arama
+                          # yapmadan bu veriyi kullanarak farkli bir
+                          # maddeyle cevap uretebilsin diye saklanir.
 
 
 # ============================================================
@@ -171,11 +183,177 @@ SADECE oluşturulan sorguyu yaz, başka hiçbir açıklama ekleme."""
     return _llm_answer.ollama_ile_cevap_uret(prompt).strip()
 
 
+def belirtilen_madde_icin_cevap_uret(arama_sorgusu: str, sonuc: dict, madde_no: str) -> str:
+    """
+    Verilen bir madde numarasi icin (sonuc icindeki ilgili chunk'lardan)
+    cevap uretir. rag_dugumu (ilk cevap) ve duzelt_dugumu (Task 2.5 -
+    Self-Correction, farkli bir maddeyle YENIDEN uretim) tarafindan
+    ORTAK olarak kullanilir - boylece ayni mantik iki yerde tekrar
+    yazilmiyor.
+    """
+    ilgili_kayitlar = sorted(
+        [
+            (doc, meta) for doc, meta in zip(sonuc["documents"][0], sonuc["metadatas"][0])
+            if meta["madde_no"] == madde_no
+        ],
+        key=lambda x: x[1]["chunk_index"]
+    )
+
+    def chunklari_birlestir(kayitlar):
+        if not kayitlar: return ""
+        birlestirilmis = kayitlar[0][0]
+        for i in range(1, len(kayitlar)):
+            sonraki_metin = kayitlar[i][0]
+            overlap_bulundu = False
+            for l in range(min(150, len(sonraki_metin)), 5, -1):
+                if birlestirilmis.endswith(sonraki_metin[:l]):
+                    birlestirilmis += sonraki_metin[l:]
+                    overlap_bulundu = True
+                    break
+            if not overlap_bulundu:
+                birlestirilmis += "\n" + sonraki_metin
+        return birlestirilmis
+        
+    birlestirilmis_metin = chunklari_birlestir(ilgili_kayitlar)
+    
+    TURKCE_ALFABE = "abcçdefgğhıijklmnoöprsştuüvyz"
+
+    def alfabe_sira_no(harf):
+        try:
+            return TURKCE_ALFABE.index(harf)
+        except ValueError:
+            return 999
+
+    tum_bentler_sozluk = {}
+    for harf, icerik in _llm_answer.bentleri_cikar(birlestirilmis_metin):
+        tum_bentler_sozluk[harf] = icerik
+
+    bentler = sorted(tum_bentler_sozluk.items(), key=lambda x: alfabe_sira_no(x[0]))
+
+    if len(bentler) >= 2:
+        cevap = _llm_answer.kod_tabanli_nihai_cevap_olustur(arama_sorgusu, madde_no, bentler)
+    else:
+        liste_prompti = _llm_answer.eksiksiz_liste_prompti_olustur(arama_sorgusu, sonuc)
+        eksiksiz_liste = _llm_answer.ollama_ile_cevap_uret(liste_prompti)
+        akici_prompt = _llm_answer.akici_hale_getir_prompti_olustur(arama_sorgusu, eksiksiz_liste)
+        cevap = _llm_answer.ollama_ile_cevap_uret(akici_prompt)
+
+    return _llm_answer.cevabi_temizle(cevap)
+
+
+# ============================================================
+# YENI: LLM-based Reranking - Task 2.5 duzeltmesi
+# ============================================================
+
+def en_uygun_maddeyi_sec(arama_sorgusu: str, sonuc: dict) -> str:
+    """
+    TASK 2.5 DUZELTMESI: Retrieval sonucundaki TEKIL maddeleri LLM'e
+    sunup soruya en uygun olanini sectiriyoruz (Reranking).
+
+    NEDEN GEREKLI: Embedding benzerligi bazen yanlis maddeyi birinci
+    siraya koyabiliyor. Ornegin "cezasi nedir?" sorusunda "acik riza"
+    kelimesi MADDE 5'te cok gectiqi icin cosine similarity onu yukari
+    cikariyor, ama cevap aslinda MADDE 17/18'de (cezai hukumler).
+    Bu adim, retrieval'dan sonra ama cevap uretiminden ONCE devreye
+    girerek dogru maddeyi seciyor.
+
+    NEDEN SELF-CORRECTION YERINE BU: "5 madde arasindan soruya en
+    uygununu sec" (siniflandirma gorevi) kucuk modeller icin,
+    "urettigin cevabi degerlendir" (meta-bilissel gorev) den cok
+    daha kolay ve GUVENILIR bir gorevdir. Ayrica yanlis cevap uretip
+    sonra duzeltmek yerine, bastan dogru maddeyi secmek 1 LLM
+    cagrisi tasarruf eder.
+    """
+    # Tekil maddeleri ve ilk chunk ozetlerini cikar
+    tekil_maddeler = {}
+    for doc, meta in zip(sonuc["documents"][0], sonuc["metadatas"][0]):
+        madde = meta["madde_no"]
+        if madde not in tekil_maddeler:
+            tekil_maddeler[madde] = doc[:200]  # Ilk 200 karakter ozet olarak
+
+    if len(tekil_maddeler) <= 1:
+        # Tek madde varsa reranking'e gerek yok
+        return list(tekil_maddeler.keys())[0]
+
+    madde_listesi = "\n".join(
+        f"- {madde}: {ozet}..." for madde, ozet in tekil_maddeler.items()
+    )
+
+    prompt = f"""Aşağıdaki KVKK maddeleri arama sonucunda bulundu. Soruyu en
+DOĞRUDAN ve en SPESİFİK şekilde cevaplayan TEK maddeyi seç.
+
+Soru: {arama_sorgusu}
+
+Bulunan maddeler:
+{madde_listesi}
+
+ÖNEMLİ: Sorudaki ANAHTAR kavrama (ör. "ceza" soruluyorsa cezai hükümler
+maddesi, "haklar" soruluyorsa haklar maddesi) odaklan. Sadece genel olarak
+konuyla ilişkili olan değil, soruyu DOĞRUDAN cevaplayan maddeyi seç.
+
+SADECE madde adını yaz (ör. "MADDE 18"), başka hiçbir şey yazma."""
+
+    yanit = _llm_answer.ollama_ile_cevap_uret(prompt).strip().upper()
+
+    # LLM'in cevabinan madde numarasini cikar
+    eslesme = re.search(r"MADDE\s+\d+", yanit)
+    if eslesme:
+        secilen = eslesme.group(0)
+        # Sadece GERCEKTEN sonuclarda olan bir maddeyi kabul et
+        if secilen in tekil_maddeler:
+            ilk_madde = list(tekil_maddeler.keys())[0]
+            if secilen != ilk_madde:
+                print(f"[Reranking] Embedding siralamasi degistirildi: "
+                      f"{ilk_madde} -> {secilen}")
+            return secilen
+
+    # Guvenli fallback: LLM gecersiz cevap verdiyse ilk sonucu kullan
+    print(f"[Reranking] LLM gecerli bir madde secemedi, ilk sonuc kullaniliyor.")
+    return list(tekil_maddeler.keys())[0]
+
+
+def madde_parcalarini_genislet_hedefli(koleksiyon, sonuc: dict, hedef_madde: str) -> dict:
+    """
+    madde_parcalarini_genislet ile ayni mantik, ama HER ZAMAN
+    en_alakali_madde (ilk sonuc) yerine belirtilen hedef_madde icin
+    genisletir. Bu, reranking farkli bir madde sectiginde o maddenin
+    tum chunklarinin da sonuca eklenmesini saglar.
+    """
+    if not sonuc["documents"][0]:
+        return sonuc
+
+    tum_parcalar = koleksiyon.get(
+        where={"madde_no": hedef_madde},
+        include=["documents", "metadatas"]
+    )
+
+    mevcut_idler = set()
+    for meta in sonuc["metadatas"][0]:
+        mevcut_idler.add((meta["madde_no"], meta["chunk_index"]))
+
+    for doc, meta in zip(tum_parcalar["documents"], tum_parcalar["metadatas"]):
+        anahtar = (meta["madde_no"], meta["chunk_index"])
+        if anahtar not in mevcut_idler:
+            sonuc["documents"][0].append(doc)
+            sonuc["metadatas"][0].append(meta)
+            mevcut_idler.add(anahtar)
+
+    return sonuc
+
+
+# ============================================================
+# GUNCELLENMIS rag_dugumu - Reranking eklenmis hali
+# ============================================================
+
 def rag_dugumu(state: AgentState) -> dict:
     """
     Faz 1'de kurdugumuz retriever + generation pipeline'ini oldugu gibi
     kullanir - Task 2.3'un amaci Faz 1'i YENIDEN YAZMAK degil, onu bir
     "arac" (tool) olarak agent'a BAGLAMAK.
+
+    TASK 2.5 GUNCELLEMESI: Artik ilk siraya koru koruye guvenmek yerine,
+    LLM-based reranking ile soruya en uygun maddeyi secip, O maddenin
+    chunklarini genisletip, O maddeyle cevap uretiyor.
     """
     soru = state["soru"]
     gecmis = state.get("gecmis", [])
@@ -195,52 +373,149 @@ def rag_dugumu(state: AgentState) -> dict:
             "kaynaklar": []
         }
 
-    sonuc = _llm_answer.madde_parcalarini_genislet(koleksiyon, sonuc)
+    # --- TASK 2.5 DEGISIKLIK: Reranking + hedefli genisletme ---
+    # ONCE reranking ile en uygun maddeyi sec, SONRA o maddenin
+    # chunklarini genislet. Eski kod: once genislet (yanlis madde
+    # icin), sonra kor koruye ilk sonucu al.
+    en_alakali_madde_no = en_uygun_maddeyi_sec(arama_sorgusu, sonuc)
+    sonuc = madde_parcalarini_genislet_hedefli(koleksiyon, sonuc, en_alakali_madde_no)
+    # --- TASK 2.5 DEGISIKLIK SONU ---
 
-    en_alakali_madde_no = sonuc["metadatas"][0][0]["madde_no"]
-    ilgili_kayitlar = sorted(
-        [
-            (doc, meta) for doc, meta in zip(sonuc["documents"][0], sonuc["metadatas"][0])
-            if meta["madde_no"] == en_alakali_madde_no
-        ],
-        key=lambda x: x[1]["chunk_index"]
-    )
+    cevap = belirtilen_madde_icin_cevap_uret(arama_sorgusu, sonuc, en_alakali_madde_no)
 
-    # Bkz. 06_llm_answer.py'deki ayni duzeltmenin aciklamasi: alt-chunklar
-    # arasindaki kasitli ORTUSME nedeniyle ham metni dogrudan birlestirmek
-    # yerine, her chunk'tan bentleri ayri cikarip harf bazinda dedup ediyoruz.
-    TURKCE_ALFABE = "abcçdefgğhıijklmnoöprsştuüvyz"
+    # Kaynaklar listesinde tekrar olmasin diye dedup ediyoruz (sirayi
+    # koruyarak) - madde_parcalarini_genislet_hedefli bazen ayni chunk'i
+    # birden fazla eklemis olabiliyor, bu da "Kullanilan kaynaklar"
+    # listesinde ayni maddenin birden fazla kez gorunmesine yol aciyordu.
+    kaynaklar = []
+    for meta in sonuc["metadatas"][0]:
+        kaynak_metni = f"{meta['madde_no']} (sayfa {meta['sayfa_no']})"
+        if kaynak_metni not in kaynaklar:
+            kaynaklar.append(kaynak_metni)
 
-    def alfabe_sira_no(harf):
-        try:
-            return TURKCE_ALFABE.index(harf)
-        except ValueError:
-            return 999
+    return {
+        "cevap": cevap,
+        "kaynaklar": kaynaklar,
+        "arama_sorgusu": arama_sorgusu,
+        "ham_sonuc": sonuc
+    }
 
-    tum_bentler_sozluk = {}
-    for doc, meta in ilgili_kayitlar:
-        for harf, icerik in _llm_answer.bentleri_cikar(doc):
-            if harf not in tum_bentler_sozluk or len(icerik) > len(tum_bentler_sozluk[harf]):
-                tum_bentler_sozluk[harf] = icerik
 
-    bentler = sorted(tum_bentler_sozluk.items(), key=lambda x: alfabe_sira_no(x[0]))
+# ============================================================
+# NODE 3: Yansitma (Reflection) dugumu - Task 2.5
+# ============================================================
 
-    if len(bentler) >= 2:
-        cevap = _llm_answer.kod_tabanli_nihai_cevap_olustur(arama_sorgusu, en_alakali_madde_no, bentler)
+def yansitma_dugumu(state: AgentState) -> dict:
+    """
+    TASK 2.5 - REFLECTION: Agent, kendi urettigi cevabi kendi kendine
+    degerlendirir. Bu ilk versiyon SADECE GOZLEMLER, henuz DUZELTME
+    yapmaz (Self-Correction bir sonraki adimda eklenecek).
+
+    Neden gerekli: rag_dugumu, arama sonucunda bulunan BIRDEN FAZLA
+    maddeden sadece EN YUKSEK BENZERLIK SKORLU olani kullanarak cevap
+    uretiyor. Ama bazen soru, retrieval'in bulup KULLANMADIGI baska bir
+    maddeyi (orn. "ceza" sorusu icin MADDE 17/18) daha dogru
+    cevaplayabilir. Bu dugum, tam olarak bunu kontrol ediyor: "cevap,
+    bulunan maddeler arasinda GERCEKTEN en dogrusunu mu kullandi?"
+    """
+    soru = state["soru"]
+    cevap = state["cevap"]
+    kaynaklar = state.get("kaynaklar", [])
+
+    if not kaynaklar:
+        # Dogrudan-cevap yolundan geldiyse (RAG hic calismadiysa)
+        # yansitmaya gerek yok.
+        return {"yansitma": "", "onerilen_madde": ""}
+
+    # Kaynaklardaki TEKIL (tekrarsiz) madde numaralarini cikar
+    tekil_maddeler = []
+    for k in kaynaklar:
+        madde_adi = k.split(" (sayfa")[0]
+        if madde_adi not in tekil_maddeler:
+            tekil_maddeler.append(madde_adi)
+
+    prompt = f"""Bir soru-cevap sistemi su cevabi uretti. Bu cevabin
+GERCEKTEN dogru olup olmadigini degerlendir.
+
+Soru: {soru}
+
+Uretilen cevap: {cevap}
+
+Arama sirasinda bulunan TUM ilgili maddeler (cevap bunlardan sadece
+BIRINI kullanmis olabilir): {", ".join(tekil_maddeler)}
+
+Degerlendirmen gereken soru: Uretilen cevap, yukaridaki listede bulunan
+DIGER maddelerden biri kullanilsaydi SORUYA DAHA DOGRU/DAHA ILGILI bir
+cevap verilebilir miydi? (orn. "ceza" sorulan bir soruda "haklar"
+maddesinin kullanilmasi gibi bir uyumsuzluk var mi?)
+
+SADECE su iki formattan birini kullanarak KISA cevap ver:
+"UYGUN: <neden uygun oldugunun 1 cumlelik aciklamasi>"
+veya
+"UYGUN DEGIL: <hangi maddenin daha uygun olabilecegi ve neden>" """
+
+    yansitma_sonucu = _llm_answer.ollama_ile_cevap_uret(prompt).strip()
+
+    onerilen_madde = ""
+    if yansitma_sonucu.upper().startswith("UYGUN DEGIL") or yansitma_sonucu.upper().startswith("UYGUN DEĞİL"):
+        # Onerilen maddeyi metinden regex ile cikar (orn. "MADDE 18")
+        eslesme = re.search(r"MADDE\s+\d+", yansitma_sonucu, re.IGNORECASE)
+        if eslesme:
+            aday_madde = eslesme.group(0).upper().replace("MADDE", "MADDE")
+            # Sadece GERCEKTEN kaynaklarda bulunan bir maddeyi onerelim -
+            # LLM'in var olmayan bir madde uydurmasina karsi guvenlik
+            if aday_madde in tekil_maddeler:
+                onerilen_madde = aday_madde
+
+        if onerilen_madde:
+            print(f"[Reflection] \u26a0\ufe0f  Agent kendi cevabini yetersiz buldu, '{onerilen_madde}' ile duzeltmeyi deneyecek: {yansitma_sonucu}")
+        else:
+            print(f"[Reflection] \u26a0\ufe0f  Agent kendi cevabini yetersiz buldu ama guvenilir bir alternatif bulamadi: {yansitma_sonucu}")
     else:
-        liste_prompti = _llm_answer.eksiksiz_liste_prompti_olustur(arama_sorgusu, sonuc)
-        eksiksiz_liste = _llm_answer.ollama_ile_cevap_uret(liste_prompti)
-        akici_prompt = _llm_answer.akici_hale_getir_prompti_olustur(arama_sorgusu, eksiksiz_liste)
-        cevap = _llm_answer.ollama_ile_cevap_uret(akici_prompt)
+        print(f"[Reflection] \u2705 Agent cevabini kontrol etti, uygun buldu.")
 
-    cevap = _llm_answer.cevabi_temizle(cevap)
+    return {"yansitma": yansitma_sonucu, "onerilen_madde": onerilen_madde}
 
-    kaynaklar = [
-        f"{meta['madde_no']} (sayfa {meta['sayfa_no']})"
-        for meta in sonuc["metadatas"][0]
-    ]
 
-    return {"cevap": cevap, "kaynaklar": kaynaklar}
+def yansitma_sonrasi_yonlendirme(state: AgentState) -> str:
+    """
+    CONDITIONAL EDGE: Reflection'dan sonra, eger guvenilir bir alternatif
+    madde onerildiyse "duzelt" dugumune, aksi halde direkt bitis (END)e
+    gidiyoruz. Bu, Self-Correction'in NE ZAMAN devreye girecegine karar
+    veren mekanizma.
+    """
+    if state.get("onerilen_madde"):
+        return "duzelt"
+    return "bitir"
+
+
+def duzelt_dugumu(state: AgentState) -> dict:
+    """
+    TASK 2.5 - SELF-CORRECTION: Reflection, mevcut cevabin yetersiz
+    oldugunu ve BASKA bir maddenin (onerilen_madde) daha uygun oldugunu
+    tespit ettiyse, bu dugum cevabi O MADDEYLE YENIDEN uretir.
+
+    Onemli: YENIDEN embedding/arama YAPMIYORUZ - zaten Task 1.5'te
+    bulunan (ham_sonuc'ta saklanan) chunk'lari kullanarak, sadece HANGI
+    maddenin bentlerini kullandigimizi degistiriyoruz. Bu hem hizli hem
+    de "hayali" bir maddeye atif yapma riskini ortadan kaldiriyor (cunku
+    onerilen_madde zaten yansitma_dugumu'nde kaynaklarda dogrulanmisti).
+
+    NOT: Sonsuz donguyu onlemek icin SADECE 1 kez duzeltme yapiyoruz -
+    duzelt_dugumu'nden sonra tekrar yansitma'ya DONMUYORUZ, direkt bitiyor.
+    """
+    onerilen_madde = state["onerilen_madde"]
+    arama_sorgusu = state.get("arama_sorgusu") or state["soru"]
+    sonuc = state["ham_sonuc"]
+
+    print(f"[Self-Correction] '{onerilen_madde}' kullanilarak cevap yeniden uretiliyor...")
+
+    yeni_cevap = belirtilen_madde_icin_cevap_uret(arama_sorgusu, sonuc, onerilen_madde)
+
+    return {
+        "cevap": yeni_cevap,
+        "yansitma": state["yansitma"] + f" [Self-Correction ile '{onerilen_madde}' kullanilarak duzeltildi.]"
+    }
 
 
 # ============================================================
@@ -251,7 +526,7 @@ def dogrudan_cevap_dugumu(state: AgentState) -> dict:
     """
     Soru KVKK ile alakasizsa, hicbir arama/embedding islemi yapmadan
     (gereksiz maliyetten kacinarak) kullaniciyi bilgilendiren sabit bir
-    cevap doner. Bu, agent'in "her zaman RAG calistirma" yerine "gerekliyse
+    cevap doner. Bu, agent'in "her zaman RAG calistir" yerine "gerekliyse
     calistir" mantiginin somut faydasini gosteriyor.
     """
     return {
@@ -273,6 +548,8 @@ def agent_olustur():
 
     graph.add_node("karar", karar_dugumu)
     graph.add_node("rag", rag_dugumu)
+    graph.add_node("yansitma", yansitma_dugumu)
+    graph.add_node("duzelt", duzelt_dugumu)
     graph.add_node("dogrudan", dogrudan_cevap_dugumu)
 
     graph.set_entry_point("karar")
@@ -285,7 +562,23 @@ def agent_olustur():
         {"rag": "rag", "dogrudan": "dogrudan"}
     )
 
-    graph.add_edge("rag", END)
+    graph.add_edge("rag", "yansitma")
+
+    # NOT (23.07 - gecici geri alma): Self-Correction (duzelt dugumu)
+    # bazen Reflection'in KENDISI yanlis degerlendirme yapip DOGRU bir
+    # cevabi YANLIS bir maddeyle degistirebildigi icin (9B modelin
+    # kendi-kendini-degerlendirme guvenilirlik siniri) SIMDILIK devre
+    # disi birakildi. duzelt_dugumu fonksiyonu ve altyapisi KODDA DURUYOR
+    # (silinmedi) - ileride ya modeli buyuterek ya da Reflection promptunu
+    # daha temkinli hale getirerek tekrar denenecek. Su an icin Reflection
+    # SADECE GOZLEMLIYOR, cevabi hic degistirmiyor.
+    #
+    # ANCAK: Reranking (en_uygun_maddeyi_sec) eklenmesiyle asil sorun
+    # (yanlis madde secimi) CEVAP URETIMINDEN ONCE cozuluyor - bu yuzden
+    # Self-Correction'a ihtiyac buyuk olcude azaldi.
+    graph.add_edge("yansitma", END)
+
+    graph.add_edge("duzelt", END)  # kullanilmiyor ama graph gecerliligi icin duruyor
     graph.add_edge("dogrudan", END)
 
     return graph.compile()
@@ -323,7 +616,11 @@ if __name__ == "__main__":
             "arac_karari": "",
             "cevap": "",
             "kaynaklar": [],
-            "gecmis": gecmis
+            "gecmis": gecmis,
+            "yansitma": "",
+            "onerilen_madde": "",
+            "arama_sorgusu": "",
+            "ham_sonuc": {}
         }
         sonuc_state = agent.invoke(baslangic_state)
 

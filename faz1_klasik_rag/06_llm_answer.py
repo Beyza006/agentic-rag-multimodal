@@ -44,6 +44,13 @@ def bentleri_cikar(metin: str) -> list:
     """
     satirlar = metin.split("\n")
     bent_deseni = re.compile(r"^([a-zçğıöşü])\)\s*(.*)$")
+    # KVKK'da harfli bentlerden ("a) ... b) ...") SONRA genelde numarali
+    # fikralar ("(2) ...", "(3) ..." gibi) gelir - bunlar ARTIK bir onceki
+    # bendin devami DEGIL, tamamen farkli/bagimsiz paragraflardir. Bu
+    # deseni tanimadan, bentleri_cikar TUM sonraki metni (sonraki fikralar
+    # dahil) son bendin icine yanlislikla ekliyordu (orn. MADDE 18/d
+    # bendine fikra (2),(3),(4)'un de sizmasi gibi).
+    fikra_deseni = re.compile(r"^\(\d+\)")
     bentler = []
     mevcut_harf = None
     mevcut_metin = []
@@ -56,6 +63,13 @@ def bentleri_cikar(metin: str) -> list:
                 bentler.append((mevcut_harf, " ".join(mevcut_metin).strip()))
             mevcut_harf = eslesme.group(1)
             mevcut_metin = [eslesme.group(2)]
+        elif fikra_deseni.match(satir_temiz):
+            # Numarali bir fikraya gecildi - bent toplamayi burada
+            # KESIN olarak durduruyoruz (bu fikra, ayri bir yapi).
+            if mevcut_harf:
+                bentler.append((mevcut_harf, " ".join(mevcut_metin).strip()))
+            mevcut_harf = None
+            mevcut_metin = []
         elif mevcut_harf:
             mevcut_metin.append(satir_temiz)
 
@@ -81,10 +95,10 @@ def giris_cumlesi_uret(soru: str, madde_no: str, bent_sayisi: int) -> str:
     """Sadece TEK bir giris cumlesi istiyoruz - liste yazmasini istemiyoruz."""
     prompt = f"""Soru: {soru}
 
-Bu soruya, {madde_no} kapsamında {bent_sayisi} farklı şart/hak ile cevap
-verilecek. SADECE bu duruma uygun, 1 CÜMLELİK bir giriş yaz (örn.
-"Bu haklar/şartlar aşağıdaki gibidir:" tarzı). Liste YAZMA, sadece giriş
-cümlesini yaz, başka hiçbir şey ekleme.
+Bu soruya, {madde_no} kapsamında {bent_sayisi} farklı alt bent/durum ile cevap
+verilecek. SADECE bu soruya uygun, 1 CÜMLELİK bir giriş yaz (örn. soru ceza soruyorsa
+"İlgili cezai hükümler aşağıdaki gibidir:", şart soruyorsa "Bu şartlar şunlardır:" tarzı). 
+Liste YAZMA, sadece giriş cümlesini yaz, başka hiçbir şey ekleme.
 
 ÇOK ÖNEMLİ: Sana verilmeyen hiçbir bilgiyi (kanun numarası, tarih, madde
 dışında ek referans vb.) UYDURMA/EKLEME - sadece "{madde_no}" ifadesini
@@ -342,4 +356,4 @@ if __name__ == "__main__":
     for meta in sonuc["metadatas"][0]:
         print(f"  - {meta['madde_no']} (sayfa {meta['sayfa_no']})")
 
-    print("\n\U0001F389 Faz 1 - Klasik RAG tamamlandi!")
+    print("\n🎉 Faz 1 - Klasik RAG tamamlandi!")
