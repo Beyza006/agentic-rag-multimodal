@@ -70,7 +70,7 @@ def gorsel_sorusu_sor(resim_yolu: str, soru: str) -> str:
                 "images": [base64_resim],  # Ollama vision API'sinin bekledigi alan
                 "stream": False
             },
-            timeout=180  # gorsel isleme metne gore daha uzun surebilir
+            timeout=400  # gorsel isleme metne gore daha uzun surebilir, ozellikle CPU'da
         )
         yanit.raise_for_status()
     except requests.exceptions.ConnectionError:
@@ -86,6 +86,24 @@ def gorsel_sorusu_sor(resim_yolu: str, soru: str) -> str:
         )
 
     return yanit.json()["response"]
+
+
+VARSAYILAN_ACIKLAMA_PROMPTU = (
+    "Bu görseli detaylıca açıkla: görselde neler var, hangi nesneler/"
+    "kişiler/metinler görünüyor, genel bağlam nedir? Türkçe ve akıcı bir "
+    "şekilde anlat."
+)
+
+
+def resmi_aciklama_uret(resim_yolu: str) -> str:
+    """
+    TASK 3.2 - Gorsel Aciklama Uretme: Kullanici ozel bir soru sormadan,
+    sadece bir gorsel yukleyip "bu ne?" turunden genel bir aciklama
+    isteyebilmesi icin. Ayni gorsel_sorusu_sor fonksiyonunu, sabit/
+    varsayilan bir "detayli acikla" promptuyla cagirir - boylece
+    kullanicinin her seferinde soru yazmasina gerek kalmaz.
+    """
+    return gorsel_sorusu_sor(resim_yolu, VARSAYILAN_ACIKLAMA_PROMPTU)
 
 
 def yazim_kontrolunden_gecir(vlm_ham_cevap: str) -> str:
@@ -133,13 +151,19 @@ Düzeltilmiş metin (SADECE düzeltilmiş metni yaz, başka hiçbir açıklama e
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Kullanim: python 08_vision.py <resim_yolu> \"<soru>\"")
-        print("Ornek:    python 08_vision.py ornek.jpg \"Bu görselde ne görüyorsun?\"")
+    if len(sys.argv) < 2:
+        print("Kullanim: python 08_vision.py <resim_yolu> [\"<soru>\"]")
+        print("Ornek 1 (soru-cevap):    python 08_vision.py ornek.jpg \"Bu görselde ne görüyorsun?\"")
+        print("Ornek 2 (genel aciklama, TASK 3.2): python 08_vision.py ornek.jpg")
         sys.exit(1)
 
     resim_yolu = sys.argv[1]
-    soru = sys.argv[2]
+    # TASK 3.2: soru verilmezse, varsayilan "detayli acikla" moduna gec
+    soru = sys.argv[2] if len(sys.argv) >= 3 else VARSAYILAN_ACIKLAMA_PROMPTU
+    aciklama_modu = len(sys.argv) < 3
+
+    if aciklama_modu:
+        print(f"Soru verilmedi -> GENEL ACIKLAMA modunda calisiyor (Task 3.2).")
 
     print(f"'{resim_yolu}' okunuyor ve '{OLLAMA_VISION_MODEL}' modeline gonderiliyor...")
 
@@ -160,8 +184,8 @@ if __name__ == "__main__":
     # cevap = yazim_kontrolunden_gecir(cevap)
 
     print("\n" + "=" * 60)
-    print(f"SORU: {soru}")
+    print("SORU: (genel açıklama istendi)" if aciklama_modu else f"SORU: {soru}")
     print("=" * 60)
     print(f"\nCEVAP:\n{cevap}")
 
-    print("\n\U0001F5BC\uFE0F  Task 3.1 - VLM ile ilk gorsel analiz tamamlandi!")
+    print("\n\U0001F5BC\uFE0F  Task 3.1/3.2 - VLM ile gorsel analiz tamamlandi!")
