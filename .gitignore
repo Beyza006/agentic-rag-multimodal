@@ -10,4 +10,5 @@ chroma_db/
 *.jpg
 *.jpeg
 data/processed/*.json
+data/ocr_cikti/
 outputs/
