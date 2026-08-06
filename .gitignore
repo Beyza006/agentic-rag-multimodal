@@ -9,6 +9,7 @@ chroma_db/
 *.png
 *.jpg
 *.jpeg
+*.webp
 data/processed/*.json
 data/ocr_cikti/
 outputs/
