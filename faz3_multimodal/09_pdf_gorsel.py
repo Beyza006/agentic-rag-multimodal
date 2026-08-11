@@ -94,22 +94,33 @@ def pdf_sayfasini_gorsele_cevir(pdf_yolu: str, sayfa_no: int) -> str:
 
 def tablo_odakli_soru_olustur(soru: str) -> str:
     """
-    TASK 3.3 IYILESTIRMESI: PDF sayfalari cogunlukla TABLO icerdigi icin,
-    kullanicinin ham sorusunu, VLM'in tabloyu SATIR SATIR ve BIRBIRINE
-    KARISTIRMADAN okumasini saglayacak ek talimatlarla zenginlestiriyoruz.
-
-    Neden gerekli: Ilk testte model, dogru sayilari (6, 9, 18, Gecici
-    Madde 3) bulmustu ama bunlari SUNARKEN birbirine karistirmisti (6, 9,
-    18'i "Gecici Madde 3"un alt ogeleri gibi gostermisti, oysa bunlar 4
-    AYRI, BAGIMSIZ maddeydi). Bu, Task 1.6'daki "eksiksizlik" sorununa
-    benzer bir durum - icerik dogru ama SUNUM/YAPI net degil.
+    TASK 3.3 IYILESTIRMESI (v4 - sadelestirmeye geri donus): Ust uste
+    eklenen kurallar (aciklamali ornekler, "EN ONEMLI KURAL" basliklari
+    vb.) modelin cevabini gittikce daha mekanik/madde-isaretli bir hale
+    getirdigi, dogal akiciligini kaybettirdigi gozlemlendi (gercek
+    kullanici testinde bulundu). Cozum: Task 3.3'te EN BASINDA iyi
+    calisan SADE prompt'a geri donuyoruz, uzerine SADECE tarih formati
+    duzeltmesini (kanitlanmis bir gercek sorun) ekliyoruz - baska hicbir
+    ek kural/ornek eklemiyoruz. "Az ama etkili talimat", "cok ama
+    cakisan talimat"tan daha iyi sonuc veriyor.
     """
     return f"""Bu görsel, bir PDF sayfasının görüntüsüdür ve muhtemelen bir
 TABLO içeriyor. Tabloyu SATIR SATIR, DİKKATLİCE oku. Her satırdaki
-bilgileri BİRBİRİNE KARIŞTIRMADAN, AYRI AYRI listele - örneğin bir
-hücrede birden fazla değer (virgülle ayrılmış sayılar gibi) varsa,
-bunların HEPSİNİN AYNI SATIRA/HÜCREYE ait bağımsız değerler olduğunu
-açıkça belirt, bir alt kategori gibi gösterme.
+bilgileri BİRBİRİNE KARIŞTIRMADAN, AYRI AYRI listele.
+
+HÜCRE İÇİ LİSTE KURALI (ÇOK ÖNEMLİ): Eğer bir hücrenin içinde "19, 20, 21, 25" veya "6, 9, 18, Geçici Madde 3" gibi BİRDEN FAZLA madde/sayı varsa, bunların HİÇBİRİNİ ATLAMA. Hepsini tam ve eksiksiz bir şekilde, aralarına virgül koyarak yaz.
+
+SÜTUN EŞLEŞTİRMESİ ÇOK ÖNEMLİ: Her değeri DOĞRU sütun başlığıyla eşleştir.
+Özellikle her satırın EN SOLDAKİ hücresi (ilk sütun) o satırın kimlik/numara bilgisidir; bu hücreyi diğer sütunlarla KARIŞTIRMA.
+
+TARİH KURALI (KESİN KURAL): Görselde gördüğün tarihleri (örneğin 1/6/2024 veya 5/12/2017) KESİNLİKLE gördüğün sırayla, olduğu gibi yaz. Gün ve ay yerlerini ASLA değiştirme! (Örn: 1/6/2024 görüyorsan, 6.01.2024 DİYE UYDURMA, doğrudan 1/6/2024 yaz veya 1 Haziran 2024 olarak çevir).
+
+CEVABIN YAPISI (ÇOK ÖNEMLİ - bu yapıya AYNEN uy):
+1. ÖNCE tablodaki TÜM satırları tek tek, her satırın tüm sütunlarıyla
+   (kanun/karar numarası, değiştirdiği maddeler, yürürlük tarihi)
+   birlikte sırayla açıkla. Hiçbir satırı atlama.
+2. SONRA "Özetle:" veya benzeri bir geçişle, kullanıcının sorduğu
+   SPESİFİK soruya doğrudan ve net bir cevap ver.
 
 Soru: {soru}"""
 

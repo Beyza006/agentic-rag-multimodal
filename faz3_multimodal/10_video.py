@@ -192,7 +192,11 @@ def video_zaman_akisini_sor(video_yolu: str, soru: str, kare_sayisi: int = 5) ->
         print(f"  [{i+1}/{len(kare_yollari)}] kare analiz ediliyor...")
         aciklama = _vision.gorsel_sorusu_sor(
             kare_yolu,
-            "Bu görselde ne görüyorsun? Kısaca (1-2 cümle) anlat."
+            "Bu görselde ne görüyorsun? Kısaca (1-2 cümle) anlat. "
+            "SADECE net gördüğün, ana eylem halindeki insanları ve büyük nesneleri söyle. "
+            "KESİN KURAL: Görseldeki tabelaları, mağaza isimlerini, logoları veya yazıları OKUMAYA ÇALIŞMA, tamamen yoksay (ör. EXK, Panos gibi şeyler uydurma)! "
+            "Arka plandaki önemsiz binaları, yolları veya yapı detaylarını (beton, inşaat vb.) UYDURMA. "
+            "Emin olmadığın, bulanık veya belirsiz hiçbir şeyi TAHMİN ETME."
         )
         print(f"      -> {aciklama}")  # DOGRULAMA ICIN: ham VLM aciklamasini goster
         kare_aciklamalari.append(aciklama)
@@ -208,15 +212,13 @@ def video_zaman_akisini_sor(video_yolu: str, soru: str, kare_sayisi: int = 5) ->
     )
 
     # ADIM 3: Metin modeline (gemma2:9b) gonderip sentez/akil yurutme yaptir
-    sentez_prompt = f"""Aşağıda bir videodan ZAMAN SIRASIYLA alınmış kare
-açıklamaları var (BAŞLANGIÇ'tan SON'a doğru). Bu açıklamaları kullanarak
-zaman içinde neyin değiştiğini/ne olduğunu anlat ve aşağıdaki soruyu cevapla.
+    sentez_prompt = f"""Aşağıda bir videodan ZAMAN SIRASIYLA alınmış kare açıklamaları var (BAŞLANGIÇ'tan SON'a doğru).
+Bu açıklamaları kullanarak videoda zaman içinde ne olduğunu akıcı bir Türkçe ile anlat.
 
-ÇOK ÖNEMLİ: SADECE aşağıda verilen kare açıklamalarında GEÇEN bilgileri
-kullan. Açıklamalarda bahsedilmeyen hiçbir detayı (nesne, aktivite,
-kişi sayısı vb.) UYDURMA/EKLEME - eğer açıklamalar kısa/sınırlıysa,
-cevabın da o ölçüde kısa/sınırlı olsun. Emin olmadığın bir şeyi tahmin
-ederek yazma.
+ÇOK ÖNEMLİ KURALLAR:
+1. SADECE aşağıda verilen kare açıklamalarında GEÇEN bilgileri kullan. Açıklamalarda BAHSEDİLMEYEN hiçbir nesne, araç, yapı veya eylem EKLEME (Halüsinasyon kesinlikle yasak). "Detaylı/edebi anlat" diye açıklamalarda olmayan şeyleri UYDURMA - açıklamalar kısaysa cevabın da kısa olsun.
+2. Olayları zaman sırasına göre birbirine bağlayarak anlat (Örneğin: "Videonun başlangıcında X görülürken, ilerleyen anlarda Y'ye geçiliyor...").
+3. Kullanıcının sorduğu spesifik bir soru varsa (aşağıda "Soru:" kısmında), mutlaka o soruya doğrudan ve net bir yanıt ver.
 
 Kare açıklamaları:
 {birlesik_metin}

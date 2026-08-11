@@ -56,6 +56,15 @@ def gorsel_sorusu_sor(resim_yolu: str, soru: str) -> str:
     """
     Bir resmi ve soruyu Ollama'nin vision-capable modeline gonderir,
     modelin cevabini dondurur.
+
+    NOT: Bu fonksiyon TEK resim ile calisir - Ollama'nin /api/generate
+    uc noktasi, arastirmamiz sonucunda (Ollama'nin kendi GitHub deposu,
+    issue #8513 - bkz. 10_video.py'deki detayli aciklama) SADECE TEK
+    GORSEL destekliyor; "images" listesine birden fazla resim koymak
+    400 Bad Request hatasina yol aciyor. Bu yuzden coklu-kare video
+    analizinde (10_video.py) her kareyi AYRI AYRI bu fonksiyona
+    gonderip, aciklamalari SONRADAN metin modeliyle birlestiriyoruz -
+    coklu resmi TEK cagride birlikte gondermeye CALISMIYORUZ.
     """
     import requests
 
@@ -68,7 +77,11 @@ def gorsel_sorusu_sor(resim_yolu: str, soru: str) -> str:
                 "model": OLLAMA_VISION_MODEL,
                 "prompt": soru,
                 "images": [base64_resim],  # Ollama vision API'sinin bekledigi alan
-                "stream": False
+                "stream": False,
+                "options": {
+                    "num_ctx": 8192,         # Genis baglam (tablo/belge gorselleri icin)
+                    "keep_alive": "15m"      # Modeli VRAM'de tutarak yukleme suresini sifirla
+                }
             },
             timeout=400  # gorsel isleme metne gore daha uzun surebilir, ozellikle CPU'da
         )
@@ -89,9 +102,10 @@ def gorsel_sorusu_sor(resim_yolu: str, soru: str) -> str:
 
 
 VARSAYILAN_ACIKLAMA_PROMPTU = (
-    "Bu görseli detaylıca açıkla: görselde neler var, hangi nesneler/"
-    "kişiler/metinler görünüyor, genel bağlam nedir? Türkçe ve akıcı bir "
-    "şekilde anlat."
+    "Aşağıdaki görseli (fotoğraf, grafik veya belge) profesyonel bir yapay zeka asistanı olarak çok detaylı ve akıcı bir Türkçe ile açıkla. "
+    "Sadece 'Şu var, bu var' şeklinde robotik listeler yapma; görselin genel bağlamını, atmosferini, içindeki nesneleri, "
+    "metinleri ve ilişkileri bir bütün olarak, karşıdaki insanın gözünde canlandırabileceği şekilde edebi ve profesyonel bir dille betimle. "
+    "ÇOK ÖNEMLİ KURAL: Kesinlikle halüsinasyon yapma. Görselde açıkça seçilmeyen veya varlığından emin olmadığın hiçbir nesneyi veya detayı (örneğin olmayan binaları) uydurma."
 )
 
 

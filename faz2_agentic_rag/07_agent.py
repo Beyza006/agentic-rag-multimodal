@@ -172,15 +172,23 @@ def sorguyu_baglamla_zenginlestir(soru: str, gecmis: list) -> str:
 Yeni soru: {soru}
 
 Yeni soru, önceki sorunun devamı/takibi niteliğindeyse, bu iki soruyu
-birleştirerek TEK BAŞINA anlaşılır, bağımsız bir arama sorgusu oluştur
-(örn. önceki soru "açık rıza olmadan ne zaman işlenir" ve yeni soru
-"peki cezası nedir" ise, birleşik sorgu "açık rızasız veri işlemenin
-cezası nedir" gibi olmalı). Eğer yeni soru zaten kendi başına
-anlaşılırsa, sadece yeni soruyu aynen döndür.
+birleştirerek TEK BAŞINA anlaşılır, bağımsız bir arama sorgusu oluştur.
+
+ÇOK ÖNEMLİ - TERMİNOLOJİYİ KORU: Yeni sorudaki ÖZEL/SPESİFİK kelimeleri
+(örneğin "hukuka aykırı", "kaydetme", "aydınlatma yükümlülüğü", "veri
+güvenliği" gibi hukuki/teknik terimleri) OLDUĞU GİBİ KORU - bunları
+daha genel/soyut bir ifadeyle DEĞİŞTİRME veya sadeleştirme. Kullanıcının
+kullandığı SPESİFİK kelimeler, doğru kaynağı bulmak için kritiktir;
+bunları kaybetmek yanlış/eksik sonuçlara yol açar.
+
+Eğer yeni soru zaten kendi başına anlaşılırsa, sadece yeni soruyu
+aynen döndür.
 
 SADECE oluşturulan sorguyu yaz, başka hiçbir açıklama ekleme."""
 
     return _llm_answer.ollama_ile_cevap_uret(prompt).strip()
+
+    return birlesik
 
 
 def belirtilen_madde_icin_cevap_uret(arama_sorgusu: str, sonuc: dict, madde_no: str) -> str:
@@ -199,36 +207,12 @@ def belirtilen_madde_icin_cevap_uret(arama_sorgusu: str, sonuc: dict, madde_no: 
         key=lambda x: x[1]["chunk_index"]
     )
 
-    def chunklari_birlestir(kayitlar):
-        if not kayitlar: return ""
-        birlestirilmis = kayitlar[0][0]
-        for i in range(1, len(kayitlar)):
-            sonraki_metin = kayitlar[i][0]
-            overlap_bulundu = False
-            for l in range(min(150, len(sonraki_metin)), 5, -1):
-                if birlestirilmis.endswith(sonraki_metin[:l]):
-                    birlestirilmis += sonraki_metin[l:]
-                    overlap_bulundu = True
-                    break
-            if not overlap_bulundu:
-                birlestirilmis += "\n" + sonraki_metin
-        return birlestirilmis
-        
-    birlestirilmis_metin = chunklari_birlestir(ilgili_kayitlar)
-    
-    TURKCE_ALFABE = "abcçdefgğhıijklmnoöprsştuüvyz"
-
-    def alfabe_sira_no(harf):
-        try:
-            return TURKCE_ALFABE.index(harf)
-        except ValueError:
-            return 999
-
-    tum_bentler_sozluk = {}
-    for harf, icerik in _llm_answer.bentleri_cikar(birlestirilmis_metin):
-        tum_bentler_sozluk[harf] = icerik
-
-    bentler = sorted(tum_bentler_sozluk.items(), key=lambda x: alfabe_sira_no(x[0]))
+    # DUZELTME: chunklari_ortusmeyi_temizleyerek_birlestir + bentleri_cikar
+    # ikilisi artik SADECE 06_llm_answer.py'de TANIMLI (tek kaynak) -
+    # burada sadece cagiriyoruz, boylece iki kopyanin birbirinden
+    # SENKRONSUZ kalma riski ortadan kalkiyor.
+    birlesik_metin = _llm_answer.chunklari_ortusmeyi_temizleyerek_birlestir(ilgili_kayitlar)
+    bentler = _llm_answer.bentleri_cikar(birlesik_metin)
 
     if len(bentler) >= 2:
         cevap = _llm_answer.kod_tabanli_nihai_cevap_olustur(arama_sorgusu, madde_no, bentler)

@@ -194,8 +194,27 @@ def karakter_bazli_split_ofsetli(metin: str, chunk_size: int = 500, chunk_overla
         # bir bent olarak degil, "d)"nin devami olarak algilamasina yol
         # aciyordu. Yeni satirla birlestirmek, orijinal PDF'teki satir
         # yapisini koruyor.
-        mevcut_chunk = (overlap_metni + "\n" + paragraf).strip() if overlap_metni else paragraf
-        mevcut_chunk_ofset = paragraf_ofset
+        #
+        # OFSET DUZELTMESI (gercek testte bulunan hata): overlap_metni,
+        # ESKI mevcut_chunk'in SONUNDAN alinan bir parca - yani metnin
+        # paragraf_ofset'ten DAHA ERKEN bir noktasindan basliyor. Onceden
+        # burada mevcut_chunk_ofset = paragraf_ofset yaziliyordu, bu da
+        # kaydedilen ofsetin chunk'in GERCEK basladigi yerden (overlap'in
+        # basladigi yerden) ILERIDE gostermesine yol aciyordu - bu da
+        # (nadir durumda, overlap bir sayfa sinirina denk gelirse) YANLIS
+        # sayfa numarasi atanmasina sebep olabiliyordu. Simdi overlap'in
+        # ESKI chunk icindeki gercek konumundan hareketle dogru ofseti
+        # hesapliyoruz.
+        if overlap_metni:
+            overlap_baslangic_ofset = mevcut_chunk_ofset + (len(mevcut_chunk) - len(overlap_metni))
+            yeni_chunk_ham = overlap_metni + "\n" + paragraf
+            # strip() ile bastan silinecek bosluk miktarini ofsete ekliyoruz
+            silinen_bas = len(yeni_chunk_ham) - len(yeni_chunk_ham.lstrip())
+            mevcut_chunk = yeni_chunk_ham.strip()
+            mevcut_chunk_ofset = overlap_baslangic_ofset + silinen_bas
+        else:
+            mevcut_chunk = paragraf
+            mevcut_chunk_ofset = paragraf_ofset
 
         while len(mevcut_chunk) > chunk_size:
             kesim = kelime_sinirindan_kes(mevcut_chunk, chunk_size)

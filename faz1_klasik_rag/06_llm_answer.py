@@ -112,6 +112,19 @@ def kod_tabanli_nihai_cevap_olustur(soru: str, madde_no: str, bentler: list) -> 
     LLM'den sadece giris cumlesini aliyoruz (dar, basit bir gorev); bent
     icerikleri dogrudan kaynak metinden (regex ile cikarilmis, garantili
     dogru) geliyor.
+
+    ONEMLI (Faz 5 - Gradio testinde bulunan hata, YENIDEN EKLENDI):
+    Bentleri TEK bir "\\n" ile degil, CIFT "\\n\\n" ile birlestiriyoruz.
+    Nedeni: cevap terminalde ham metin olarak gosterildiginde tek "\\n"
+    yeterliydi, ama Gradio arayuzu cevaplari MARKDOWN olarak render
+    ediyor - Markdown kuralina gore TEK satir sonu sadece bosluk sayilir,
+    GERCEK bir satir sonu OLUSTURMAZ. Bu da bentlerin tek bir paragrafa
+    birlesip tarayici genisligine gore rastgele yerlerden kirilmasina
+    (orn. "kadar,MADDE" gibi tuhaf birlesmelere) yol aciyordu. Cift
+    "\\n\\n" (Markdown'da "yeni paragraf" anlamina gelir) bu sorunu
+    KOKTEN cozuyor - 14_gradio_app.py'deki genel ".replace()" yamasina
+    BAGIMLI KALMADAN, boylece bu fonksiyon Gradio disinda (terminal,
+    baska bir arayuz) kullanildiginda da dogru calisir.
     """
     giris = giris_cumlesi_uret(soru, madde_no, len(bentler))
 
@@ -119,7 +132,7 @@ def kod_tabanli_nihai_cevap_olustur(soru: str, madde_no: str, bentler: list) -> 
     for harf, icerik in bentler:
         satirlar.append(f"{madde_no}/{harf}) {icerik}")
 
-    return "\n".join(satirlar)
+    return "\n\n".join(satirlar)
 
 
 def eksiksiz_liste_prompti_olustur(soru: str, sonuc: dict) -> str:
@@ -215,6 +228,17 @@ def cevabi_temizle(cevap: str) -> str:
 
     cevap = re.sub(r",?\s*haklarına sahiptir\.?", ".", cevap, flags=re.IGNORECASE)
 
+    # EK KURAL: Metnin en SONUNDA, tek basina duran (tirnak icinde veya
+    # cikinti) bir "MADDE X" ifadesi varsa, metindeki TOPLAM MADDE sayisi
+    # ne olursa olsun (1 veya daha fazla) bunu temizle. Yukaridaki kural
+    # sadece "toplam 1 MADDE varsa" calisiyor, ama cevap icinde MADDE
+    # zaten bir kez mesru olarak gecip SONRA bir kez daha (bu sefer
+    # anlamsiz, yalniz basina) tekrar edebiliyor - bu kural, sayidan
+    # bagimsiz olarak SADECE bu ozel "yalniz kalan kirintiyi" hedefliyor.
+    # re.IGNORECASE ile "MADDE 17" / "Madde 17" farki gozetmiyoruz.
+    cevap = re.sub(r'\s*["\']\s*MADDE\s+\d+\s*["\']\s*$', "", cevap, flags=re.IGNORECASE)
+    cevap = re.sub(r'(?<=[.!?])\s*MADDE\s+\d+\s*$', "", cevap, flags=re.IGNORECASE)
+
     tekrar_deseni = re.compile(r"(\b.{15,100}?)\s+\1", re.IGNORECASE)
     onceki_hal = None
     while onceki_hal != cevap:
@@ -226,6 +250,50 @@ def cevabi_temizle(cevap: str) -> str:
     cevap = re.sub(r"\s+\.", ".", cevap)
 
     return cevap.strip()
+
+
+def chunklari_ortusmeyi_temizleyerek_birlestir(ilgili_kayitlar: list) -> str:
+    """
+    DUZELTME (gercek testte bulunan hata): Ayni maddeye ait, chunk_index
+    sirasina gore siralanmis parcalari TEK bir metinde birlestirir - ama
+    chunking sirasinda (Task 1.2) EKLENEN kasitli ORTUSMEYI (overlap,
+    ~80 karakter) de dedupe ederek.
+
+    NEDEN GEREKLI: Onceki yaklasim, bentleri_cikar'i HER PARCAYA AYRI AYRI
+    uyguluyordu (overlap tekrarini onlemek icin). Ama bu, bir bendin
+    (orn. MADDE 18/d) TAM OLARAK chunk sinirina denk gelmesi durumunda
+    ciddi bir soruna yol aciyordu: bendin ilk parcasi bir chunk'ta YARIM
+    kaliyor, devam metni ise SONRAKI chunk'ta "d)" harfi OLMADAN
+    basladigi icin (overlap nedeniyle) bentleri_cikar tarafindan HICBIR
+    bende ait olarak TANINMIYOR ve SESSIZCE KAYBOLUYORDU (gercek testte
+    "50.000 Türk lirasından... idari para cezası verilir" ifadesinin
+    tamamen dustugu gozlemlendi).
+
+    COZUM: Once TUM parcalari, aralarindaki ortusen (duplicate) metni
+    TESPIT EDIP SADECE BIR KEZ sayarak TEK bir surekli metinde
+    birlestiriyoruz - boylece bentleri_cikar'a chunk sinirlari HIC
+    gorunmeyen, kesintisiz bir metin gidiyor ve bir bendin chunk
+    sinirini asan kismi da dogru sekilde yakalaniyor.
+
+    NOT: Bu fonksiyon, 07_agent.py'deki belirtilen_madde_icin_cevap_uret
+    tarafindan da _llm_answer.chunklari_ortusmeyi_temizleyerek_birlestir
+    olarak cagriliyor - iki yerde AYRI AYRI tanimlanmamasi icin TEK
+    kaynak burada tutuluyor.
+    """
+    if not ilgili_kayitlar:
+        return ""
+
+    birlesik = ilgili_kayitlar[0][0]
+    for doc, _meta in ilgili_kayitlar[1:]:
+        en_uzun_ortusme = 0
+        maks_deneme = min(len(birlesik), len(doc), 200)
+        for uzunluk in range(maks_deneme, 14, -1):
+            if birlesik[-uzunluk:] == doc[:uzunluk]:
+                en_uzun_ortusme = uzunluk
+                break
+        birlesik += doc[en_uzun_ortusme:]
+
+    return birlesik
 
 
 def ollama_ile_cevap_uret(prompt: str) -> str:
@@ -241,7 +309,12 @@ def ollama_ile_cevap_uret(prompt: str) -> str:
             json={
                 "model": OLLAMA_MODEL,
                 "prompt": prompt,
-                "stream": False
+                "stream": False,
+                "options": {
+                    "num_ctx": 4096,         # LLM bağlam boyutu sınırlaması (RAM/Hız optimizasyonu)
+                    "num_predict": 1024,     # Maksimum üretilecek token (Cevapların uzayıp sarkmasını önler)
+                    "keep_alive": "15m"      # Hybrid agent düğümler arası geçişte modeli VRAM'de sıcak tutar
+                }
             },
             timeout=400
         )
@@ -295,14 +368,12 @@ if __name__ == "__main__":
         key=lambda x: x[1]["chunk_index"]
     )
 
-    # KRITIK DUZELTME: Uzun maddeler alt-chunklara bolunurken (Task 1.2)
-    # chunklar arasinda KASITLI bir ORTUSME (overlap) birakiliyordu (baglam
-    # sureklilligi icin). Bu chunklarin HAM METNINI dogrudan birlestirmek,
-    # ortusen kismin IKI KEZ gorunmesine yol aciyordu (orn. bir bendin
-    # tekrarlanmasi). Cozum: her chunk'tan bentleri AYRI AYRI cikarip,
-    # harf bazinda dedup ederek (ayni harf birden fazla chunk'ta ciktiysa
-    # en UZUN/tam olanini tutarak) birlestiriyoruz - boylece ham metin
-    # duzeyinde birlestirme hic yapilmiyor, sorun kokten cozuluyor.
+    # DUZELTME: Chunk'lari once ORTUSMEYI TEMIZLEYEREK birlestirip,
+    # bentleri_cikar'i bu TEK, kesintisiz metin uzerinde BIR KEZ
+    # calistiriyoruz - boylece chunk sinirina denk gelen bentler de
+    # eksiksiz yakalanir (bkz. chunklari_ortusmeyi_temizleyerek_birlestir
+    # docstring'i - eskiden chunk-bazinda ayri isleme, MADDE 18/d gibi
+    # sinir-asan bentlerin sessizce kaybolmasina yol aciyordu).
     TURKCE_ALFABE = "abcçdefgğhıijklmnoöprsştuüvyz"
 
     def alfabe_sira_no(harf):
@@ -311,13 +382,8 @@ if __name__ == "__main__":
         except ValueError:
             return 999
 
-    tum_bentler_sozluk = {}
-    for doc, meta in ilgili_kayitlar:
-        for harf, icerik in bentleri_cikar(doc):
-            if harf not in tum_bentler_sozluk or len(icerik) > len(tum_bentler_sozluk[harf]):
-                tum_bentler_sozluk[harf] = icerik
-
-    bentler = sorted(tum_bentler_sozluk.items(), key=lambda x: alfabe_sira_no(x[0]))
+    birlesik_metin = chunklari_ortusmeyi_temizleyerek_birlestir(ilgili_kayitlar)
+    bentler = bentleri_cikar(birlesik_metin)
 
     if len(bentler) >= 2:
         print(f"Asama 1/2: {len(bentler)} bent regex ile koddan cikarildi (LLM'e sorulmadi, garantili).")

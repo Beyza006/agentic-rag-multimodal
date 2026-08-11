@@ -8,28 +8,32 @@ geçer — "Hybrid RAG" böyle çalışır.
 
 FAZ 2 vs FAZ 4 FARKI:
   Faz 2: soru → [KVKK ile ilgili mi?] → rag VEYA doğrudan_cevap
-  Faz 4: soru → [KVKK ile ilgili mi?] → rag → [bilgi yeterli mi?]
-                                                  ├─ yeterli  → cevap ver
-                                                  └─ yetersiz → web ara → cevap ver
+  Faz 4: soru → rag → [bilgi yeterli mi?]
+                          ├─ yeterli  → cevap ver
+                          └─ yetersiz → web ara → cevap ver
 
-YENİ LANGGRAPH AKIŞI:
+YENİ LANGGRAPH AKIŞI (GÜNCEL - gerçek test sırasında düzeltildi):
   BAŞLANGIÇ
       │
       ▼
-  [karar_dugumu]          Soru KVKK ile ilgili mi?
-    ├─ alakasiz → [dogrudan_cevap] → SON
-    └─ ilgili  → [rag_dugumu]
+  [rag_dugumu]           ChromaDB'de arama yapar (HER soru için, konu
+      │                  kısıtlaması YOK - "karar_dugumu"nun sert
+      │                  KVKK/alakasız filtresi artık devre dışı,
+      │                  bkz. hybrid_agent_olustur() içindeki not)
+      ▼
+[yeterlilik_dugumu]   ChromaDB yeterli bilgi içeriyor mu?
+  ├─ yeterli  → [cevap_uret_dugumu] → SON
+  └─ yetersiz → [web_dugumu]
                       │
                       ▼
-                [yeterlilik_dugumu]   ChromaDB yeterli bilgi içeriyor mu?
-                  ├─ yeterli  → [cevap_uret_dugumu] → SON
-                  └─ yetersiz → [web_dugumu]
-                                      │
-                                      ▼
-                               [hibrit_cevap_dugumu]  RAG + Web birleştirip cevap ver
-                                      │
-                                      ▼
-                                    SON
+               [hibrit_cevap_dugumu]  Web sonuçlarıyla cevap ver
+                      │
+                      ▼
+                    SON
+
+NOT: "karar_dugumu" ve "dogrudan_cevap_dugumu" fonksiyonları kodda hâlâ
+duruyor (silinmedi, ileride farklı bir senaryoda geri getirilebilir)
+ama grafiğe bağlı DEĞİLLER - şu an hiç çalışmıyorlar.
 
 Kullanım:
     python 13_hybrid_agent.py "Kişisel veri ihlalinin cezası nedir?"
@@ -38,6 +42,7 @@ Kullanım:
 
 import sys
 import os
+import re
 import importlib.util
 from typing import TypedDict
 
@@ -200,8 +205,8 @@ def yeterlilik_dugumu(state: HybridAgentState) -> dict:
         return {"rag_yeterli": False}
 
     # --- AŞAMA 2: LLM tabanlı anlam kontrolü ---
-    # İlk 3 dokümanın kısa özetini bağlam olarak ver (token tasarrufu)
-    baglam_ozeti = "\n---\n".join(d[:300] for d in docs[:3])
+    # İlk 4 dokümanın genişletilmiş özetini bağlam olarak ver (daha doğru karar için)
+    baglam_ozeti = "\n---\n".join(d[:1000] for d in docs[:4])
 
     prompt = f"""Aşağıdaki BAĞLAM bilgisi, bir kullanıcının sorusunu
 cevaplamak için bir veri tabanından getirildi.
@@ -349,22 +354,41 @@ def hibrit_cevap_dugumu(state: HybridAgentState) -> dict:
 
     web_baglam = _web_search.sonuclari_baglama_donustur(web_sonuclari)
 
-    prompt = f"""Aşağıdaki web kaynaklarına dayanarak soruyu cevapla.
+    prompt = f"""Aşağıdaki web kaynaklarına (snippet) dayanarak soruyu cevapla.
 
-ÖNEMLİ KURALLAR:
-- Sadece aşağıdaki kaynaklarda geçen bilgileri kullan.
-- Emin olmadığın hiçbir detayı uydurma.
-- Kaynaklar yetersizse bunu açıkça belirt.
-- Türkçe yanıt ver.
+ÇOK ÖNEMLİ KURALLAR (HAYATİ ÖNEM TAŞIR):
+1. SADECE aşağıdaki kaynak metinlerinde AÇIKÇA GEÇEN bilgileri kullan.
+2. Hava durumu, derece, fiyat, tarih gibi sayısal verileri ASLA UYDURMA (Halüsinasyon yapma). Eğer kaynaklarda net bir sayı/derece yazmıyorsa "Verilen kaynaklarda bu bilgi bulunmamaktadır" de.
+3. Kaynaklar genel konulardan bahsediyor ama sorunun tam cevabını içermiyorsa, tahminde bulunmak yerine "Kaynaklar yetersiz" olduğunu açıkça belirt.
+4. ÇOK ÖNEMLİ: Cevabına KESİNLİKLE "Yukarıdaki kaynaklara göre" veya "Verilen kaynaklara göre" gibi yön belirten cümlelerle BAŞLAMA.
 
 Kaynaklar:
 {web_baglam}
 
 Soru: {soru}
 
-Cevap:"""
+Nihai Cevap:"""
 
     cevap = _llm_answer.ollama_ile_cevap_uret(prompt).strip()
+
+    # GARANTILI TEMIZLEME: Prompt'a "kaynaklara gore diye baslama" talimati
+    # eklenmis olsa bile kucuk model bunu bazen gormezden gelip yine de o
+    # sekilde basliyor (gercek testte gorüldü). Bu yuzden prompt'a GUVENMEK
+    # YERINE, ciktinin basindaki bu kaliplasmis ifadeleri KODDAN kesin
+    # olarak siliyoruz - "arayuzde kaynaklar cevabin ALTINDA oldugu icin
+    # 'yukaridaki/verilen kaynaklara gore' demek yaniltici.
+    cevap = re.sub(
+        r'^\s*(?:Yukarıdaki|Aşağıdaki|Verilen|Bu)\s+kaynaklar[ae]?\s+(?:göre|dayanarak|dayanılarak)[,;:]?\s*',
+        "",
+        cevap,
+        flags=re.IGNORECASE,
+    )
+    # Bazen bu ifade cumle icinde "Kaynaklara gore, ..." seklinde de gelir
+    cevap = re.sub(r'^\s*Kaynaklar[ae]?\s+göre[,;:]?\s*', "", cevap, flags=re.IGNORECASE)
+    # Ilk harfi buyut (temizlik sonrasi kucuk harfle baslamis olabilir)
+    cevap = cevap.strip()
+    if cevap:
+        cevap = cevap[0].upper() + cevap[1:]
 
     web_kaynaklari = [
         f"{s['baslik']} — {s['url']}"

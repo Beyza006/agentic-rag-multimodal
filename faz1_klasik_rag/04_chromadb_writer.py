@@ -67,11 +67,18 @@ def chromadb_ye_yaz(chunklar: list[dict]):
     client = chromadb.PersistentClient(path=CHROMA_DB_YOLU)
 
     # Koleksiyon zaten varsa uzerine yazmamak icin once siliyoruz
-    # (script'i birden fazla kez calistirinca "zaten var" hatasi almamak icin)
-    try:
+    # (script'i birden fazla kez calistirinca "zaten var" hatasi almamak icin).
+    #
+    # DUZELTME: Onceden "try: delete_collection() except Exception: pass"
+    # kullaniliyordu - bu, koleksiyon gercekten yoksa dogru calisiyordu
+    # ama teorik olarak BASKA bir gercek hatayi da (orn. disk izin sorunu,
+    # bozuk veritabani) sessizce yutabilirdi. Simdi once list_collections()
+    # ile koleksiyonun GERCEKTEN var olup olmadigini kontrol ediyoruz -
+    # boylece delete_collection() sadece GERCEKTEN gerekliyse cagriliyor,
+    # beklenmedik hatalar artik gizlenmiyor.
+    mevcut_koleksiyon_adlari = [k.name for k in client.list_collections()]
+    if KOLEKSIYON_ADI in mevcut_koleksiyon_adlari:
         client.delete_collection(KOLEKSIYON_ADI)
-    except Exception:
-        pass  # koleksiyon yoksa silme islemi zaten gereksiz, hata verilebilir
 
     # hnsw:space "cosine" -> embedding'lerimiz normalize edildigi icin
     # (Task 1.3'te normalize_embeddings=True kullanmistik) cosine benzerligi
