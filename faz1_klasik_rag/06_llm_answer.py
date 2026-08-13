@@ -106,7 +106,55 @@ kullanabilirsin, başka hiçbir sayı veya isim EKLEME."""
     return ollama_ile_cevap_uret(prompt).strip()
 
 
-def kod_tabanli_nihai_cevap_olustur(soru: str, madde_no: str, bentler: list) -> str:
+def onsel_tanim_metnini_cikar(metin: str) -> str:
+    """
+    DUZELTME (gercek testte bulunan hata - MADDE 6 ornegi): Bir maddenin
+    BIRDEN FAZLA fikrasi olabilir - bazilari harfli bent (a,b,c...)
+    icerir, bazilari (orn. bir TANIM cumlesi) hic bent icermeden tek
+    basina anlamli bir paragraftir. kod_tabanli_nihai_cevap_olustur
+    SADECE bentleri kullandigi icin, boyle bir "tanim fikrasi" (orn.
+    MADDE 6/1: "Kişilerin ırkı, etnik kökeni... özel nitelikli kişisel
+    veridir.") SESSIZCE ATLANIYORDU - bu da "X nedir?" turu tanim
+    sorularinda, sistemin yanlislikla SADECE istisnalari (bentli fikra)
+    cevap olarak vermesine, asil TANIMI hic göstermemesine yol acti.
+
+    Bu fonksiyon, İLK harfli bent baslamadan ONCE gelen metni yakalar.
+    Eger bu metin yeterince UZUNSA (80+ karakter - kisa bir madde
+    basligini/numarasini yanlislikla "tanim" sanmamak icin), anlamli
+    bir tanim/aciklama paragrafi oldugu varsayilir ve dondurulur.
+    Kisa ise (orn. MADDE 18'in "Bu Kanunun;" gibi bir baslangici),
+    bos string doner - boylece zaten iyi calisan maddelerin cevabina
+    gereksiz kirinti eklenmez.
+    """
+    satirlar = metin.split("\n")
+    bent_deseni = re.compile(r"^([a-zçğıöşü])\)\s*(.*)$")
+    # DUZELTME (gercek testte bulunan kozmetik sorun): "İKİNCİ BÖLÜM",
+    # "ÜÇÜNCÜ BÖLÜM" gibi belge yapisi basliklari da onsel metne
+    # sizip cevaba gereksiz/tuhaf bir sekilde ekleniyordu (orn. MADDE 4
+    # cevabinda "İKİNCİ BÖLÜM Kişisel Verilerin İşlenmesi..." gibi).
+    # Bu satirlari, madde icerigiyle ilgisiz oldugu icin atliyoruz.
+    bolum_baslik_deseni = re.compile(
+        r"^(BİRİNCİ|İKİNCİ|ÜÇÜNCÜ|DÖRDÜNCÜ|BEŞİNCİ|ALTINCI|YEDİNCİ|SEKİZİNCİ|DOKUZUNCU|ONUNCU)\s+BÖLÜM$",
+        re.IGNORECASE
+    )
+
+    onsel_satirlar = []
+    for satir in satirlar:
+        satir_temiz = satir.strip()
+        if bent_deseni.match(satir_temiz):
+            break
+        if satir_temiz and not bolum_baslik_deseni.match(satir_temiz):
+            onsel_satirlar.append(satir_temiz)
+
+    onsel_metin = " ".join(onsel_satirlar).strip()
+
+    if len(onsel_metin) < 80:
+        return ""
+
+    return onsel_metin
+
+
+def kod_tabanli_nihai_cevap_olustur(soru: str, madde_no: str, bentler: list, onsel_metin: str = "") -> str:
     """
     Nihai cevabi TAMAMEN kod tarafinda, deterministik olarak birlestirir.
     LLM'den sadece giris cumlesini aliyoruz (dar, basit bir gorev); bent
@@ -125,10 +173,18 @@ def kod_tabanli_nihai_cevap_olustur(soru: str, madde_no: str, bentler: list) -> 
     KOKTEN cozuyor - 14_gradio_app.py'deki genel ".replace()" yamasina
     BAGIMLI KALMADAN, boylece bu fonksiyon Gradio disinda (terminal,
     baska bir arayuz) kullanildiginda da dogru calisir.
+
+    YENI PARAMETRE (onsel_metin): Eger madde, bentlerden ONCE anlamli
+    bir tanim/aciklama fikrasi iceriyorsa (bkz. onsel_tanim_metnini_cikar),
+    bu metni giris cumlesinden HEMEN SONRA, bentlerden ONCE ekliyoruz -
+    boylece tanim sorularinda asil tanim artik ATLANMIYOR.
     """
     giris = giris_cumlesi_uret(soru, madde_no, len(bentler))
 
-    satirlar = [giris, ""]
+    satirlar = [giris]
+    if onsel_metin:
+        satirlar.append(onsel_metin)
+    satirlar.append("")
     for harf, icerik in bentler:
         satirlar.append(f"{madde_no}/{harf}) {icerik}")
 
@@ -238,6 +294,26 @@ def cevabi_temizle(cevap: str) -> str:
     # re.IGNORECASE ile "MADDE 17" / "Madde 17" farki gozetmiyoruz.
     cevap = re.sub(r'\s*["\']\s*MADDE\s+\d+\s*["\']\s*$', "", cevap, flags=re.IGNORECASE)
     cevap = re.sub(r'(?<=[.!?])\s*MADDE\s+\d+\s*$', "", cevap, flags=re.IGNORECASE)
+
+    # DUZELTME (gercek testte bulunan kozmetik sorun - doc_13 ornegi):
+    # Model bazen, cevabin ic kisminda ZATEN soyledigi bir cumleyi,
+    # metnin en SONUNDA bir kez daha, bu sefer TIRNAK ICINDE tekrar
+    # ediyordu (orn. "...otuz gün içinde sonuçlandırır. [...]
+    # "Veri sorumlusu... otuz gün içinde sonuçlandırır.""). Onceki
+    # tekrar_deseni (asagida) SADECE BITISIK (araya baska metin
+    # girmeyen) ve 100 karakterden KISA tekrarlari yakaliyordu - bu
+    # durumda ARADA farkli bir cumle var VE tekrar 100 karakterden
+    # UZUN, o yuzden yakalanmiyordu. Bu yeni kural, metnin EN SONUNDAKI
+    # tirnakli bir ifadeyi, onun ilk birkaç kelimesi metnin BASKA bir
+    # yerinde de geciyorsa (yani gercekten bir TEKRAR ise), kaldırır.
+    son_tirnakli_desen = re.compile(r'\s*["\']([^"\']{20,400})["\']\.?\s*$')
+    eslesme = son_tirnakli_desen.search(cevap)
+    if eslesme:
+        tirnak_icerigi = eslesme.group(1).strip()
+        metnin_geri_kalani = cevap[:eslesme.start()]
+        tirnak_basi = tirnak_icerigi[:40].lower()
+        if tirnak_basi and tirnak_basi in metnin_geri_kalani.lower():
+            cevap = metnin_geri_kalani.rstrip()
 
     tekrar_deseni = re.compile(r"(\b.{15,100}?)\s+\1", re.IGNORECASE)
     onceki_hal = None
@@ -388,8 +464,9 @@ if __name__ == "__main__":
     if len(bentler) >= 2:
         print(f"Asama 1/2: {len(bentler)} bent regex ile koddan cikarildi (LLM'e sorulmadi, garantili).")
         print("Asama 2/2: Giris cumlesi uretiliyor (format kod tarafinda sabit)...")
+        onsel_metin = onsel_tanim_metnini_cikar(birlesik_metin)
         try:
-            cevap = kod_tabanli_nihai_cevap_olustur(soru, en_alakali_madde_no, bentler)
+            cevap = kod_tabanli_nihai_cevap_olustur(soru, en_alakali_madde_no, bentler, onsel_metin)
         except RuntimeError as hata:
             print(f"\n\u274c HATA: {hata}")
             sys.exit(1)

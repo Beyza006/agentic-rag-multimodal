@@ -198,15 +198,51 @@ def yeterlilik_dugumu(state: HybridAgentState) -> dict:
     ham_sonuc = state.get("ham_sonuc", {})
     soru      = state["soru"]
     docs      = ham_sonuc.get("documents", [[]])[0]
+    mesafeler = ham_sonuc.get("distances", [[]])[0]
 
     # --- AŞAMA 1: Sayısal kontrol ---
     if len(docs) == 0:
         print("[Yeterlilik] ❌ Hiç sonuç bulunamadı → web araması tetikleniyor.")
         return {"rag_yeterli": False}
 
+    # --- AŞAMA 1.5: BENZERLİK ESİĞİ (YENİ - gerçek testte bulunan hata
+    # için eklendi) ---
+    # DUZELTME: Gercek testte, KVKK ile HICBIR ilgisi olmayan bir soruda
+    # ("Turkiye'nin baskenti neresidir?") LLM'in yanlislikla "EVET"
+    # (yeterli) dedigi gozlemlendi - muhtemelen dokumanin BASKA bir
+    # baglamda gecen "Ankara" kelimesine (Kurumun merkezi Ankara'dadir)
+    # yuzeysel olarak takilip yanilmisti. Bu, KUCUK modellerin "bu
+    # baglam soruyu cevapliyor mu?" turu OZNEL yargilarda BAZEN
+    # guvenilmez olabildigini gosteriyor (Task 2.5'teki derse benzer).
+    #
+    # COZUM: LLM'e sormadan ONCE, en iyi sonucun benzerlik skoru COK
+    # dusukse (gercekten alakasiz oldugunu NESNEL olarak gosteriyorsa)
+    # direkt "yetersiz" karari veriyoruz - boylece LLM'in yuzeysel
+    # kelime eslesmesine kanma riski en bastan elenmis oluyor.
+    en_iyi_benzerlik = (1 - mesafeler[0]) if mesafeler else 0.0
+    COK_DUSUK_BENZERLIK_ESIGI = 0.3
+    if en_iyi_benzerlik < COK_DUSUK_BENZERLIK_ESIGI:
+        print(
+            f"[Yeterlilik] ❌ En iyi benzerlik ({en_iyi_benzerlik:.2f}) çok düşük "
+            f"(<{COK_DUSUK_BENZERLIK_ESIGI}) → web araması tetikleniyor (LLM'e sorulmadı)."
+        )
+        return {"rag_yeterli": False}
+
+    # DUZELTME: Esigi GECEN durumlarda da skoru terminale yazdiriyoruz -
+    # gercek testte (web_02 - "Turkiye'nin baskenti" sorusu) esigin
+    # (0.3) YETERSIZ kaldigi, yani konu-disi bir sorunun yine de esigi
+    # gecip LLM asamasina ulastigi gozlemlendi. Bu print, gercek skorun
+    # ne oldugunu GORUP esigi doğru kalibre edebilmemiz icin eklendi.
+    print(f"[Yeterlilik] (bilgi) En iyi benzerlik: {en_iyi_benzerlik:.3f} (eşik: {COK_DUSUK_BENZERLIK_ESIGI}) - LLM kontrolüne geçiliyor.")
+
     # --- AŞAMA 2: LLM tabanlı anlam kontrolü ---
-    # İlk 4 dokümanın genişletilmiş özetini bağlam olarak ver (daha doğru karar için)
-    baglam_ozeti = "\n---\n".join(d[:1000] for d in docs[:4])
+    # İlk 2 dokümanın genişletilmiş özetini bağlam olarak ver (daha doğru
+    # karar için). DUZELTME: onceden ilk 4 dokuman veriliyordu - ama
+    # gercek testte, alakali TEK bir dokumanin (orn. MADDE 11) yaninda
+    # daha az alakali 3 dokumanin da bulanik/karisik bir baglam
+    # olusturup LLM'in yanlislikla "HAYIR" demesine (yanlis negatif)
+    # yol actigi gozlemlendi. 2'ye indirerek gurultuyu azaltiyoruz.
+    baglam_ozeti = "\n---\n".join(d[:1000] for d in docs[:2])
 
     prompt = f"""Aşağıdaki BAĞLAM bilgisi, bir kullanıcının sorusunu
 cevaplamak için bir veri tabanından getirildi.

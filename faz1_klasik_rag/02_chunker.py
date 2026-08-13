@@ -84,7 +84,7 @@ def sayfa_bul(offset: int, sayfa_araliklari: list[tuple]) -> int:
 # YONTEM 1: Karakter-Bazli Splitter (offset takipli)
 # ============================================================
 
-def kapanis_baslik_temizle(metin: str) -> str:
+def kapanis_baslik_temizle(metin: str) -> tuple:
     """
     KVKK gibi Turkce kanun metinlerinde her maddenin BASLIGI, "MADDE N"
     ifadesinden ONCE gelir (orn. "Veri güvenliğine ilişkin yükümlülükler
@@ -99,29 +99,45 @@ def kapanis_baslik_temizle(metin: str) -> str:
     "gurultuyu" temizler - bu, sinir kaydirma yontemine gore çok daha
     az riskli çunku BASLIK/GIRIS gibi diger chunklarin yapisini bozma
     ihtimali yok (guvenlik kontrolu asagida).
+
+    DUZELTME (gercek testte bulunan hata - MADDE 11 ornegi): Onceden bu
+    fonksiyon kirpilan basligi SADECE SILIYORDU - "İlgili kişinin
+    hakları" gibi, SONRAKI maddenin (MADDE 11) EN GUCLU semantik ipucu
+    olan bir baslik, hem MADDE 10'un sonundan silinip hem MADDE 11'e
+    HIC eklenmeden TAMAMEN KAYBOLUYORDU. Bu da MADDE 11'in "İlgili
+    kişinin hakları nelerdir?" gibi bir soruya embedding aramasinda
+    ZAYIF eslesmesine (baska, konuyla daha az ilgili maddelerin bile
+    onune gecmesine) yol aciyordu.
+
+    Simdi bu fonksiyon, kirpilan metni de (temizlenmis_metin, kirpilan_baslik)
+    ikilisi olarak dondurur - cagiran kod (madde_bazli_split) bu basligi
+    ATMAK yerine SONRAKI maddenin basina EKLEMELI.
     """
     orijinal = metin
     satirlar = metin.split("\n")
+    kirpilan_satirlar = []
 
     while len(satirlar) >= 2:
         son_satir = satirlar[-1].strip()
         if son_satir and len(son_satir) < 80 and son_satir[-1] not in ",.;:":
-            satirlar.pop()
+            kirpilan_satirlar.insert(0, satirlar.pop())
         else:
             break
 
     sonuc = "\n".join(satirlar).rstrip()
+    kirpilan_baslik = "\n".join(kirpilan_satirlar).strip()
 
     # GUVENLIK KONTROLU: Eger kirpma sonucu chunk neredeyse tamamen
     # bosaldiysa (orn. BASLIK/GIRIS chunk'inda oldugu gibi, dokuman
     # basligi + BOLUM basligi + madde basligi UST USTE gelip hicbiri
     # noktalama icermedigi icin TUMU kirpilabilir), bu buyuk ihtimalle
     # GERCEK icerigi de yanlislikla sildigimiz anlamina gelir - bu
-    # durumda hicbir sey yapmadan ORIJINALI geri donuyoruz.
+    # durumda hicbir sey yapmadan ORIJINALI geri donuyoruz (kirpilan
+    # baslik da bos donuyor, cunku aslinda hicbir sey kirpilmamis sayilir).
     if len(sonuc) < 20:
-        return orijinal
+        return orijinal, ""
 
-    return sonuc
+    return sonuc, kirpilan_baslik
 
 
 def karakter_bazli_split_ofsetli(metin: str, chunk_size: int = 500, chunk_overlap: int = 50) -> list[dict]:
@@ -281,6 +297,7 @@ def madde_bazli_split(tam_metin: str, sayfa_araliklari: list[tuple]) -> list[dic
     sinirlar.append(len(tam_metin))
 
     ham_maddeler = []
+    onceki_kirpilan_baslik = ""  # bir onceki maddeden "sizip" gelen baslik
     for i in range(len(sinirlar) - 1):
         baslangic_ofset = sinirlar[i]
         bitis_ofset = sinirlar[i + 1]
@@ -291,15 +308,31 @@ def madde_bazli_split(tam_metin: str, sayfa_araliklari: list[tuple]) -> list[dic
         # Bir sonraki maddenin basligi (varsa) bu maddenin sonuna
         # sizmis olabilir - temizliyoruz (bkz. kapanis_baslik_temizle
         # fonksiyonunun docstring'i).
-        parca = kapanis_baslik_temizle(parca)
+        parca, kirpilan_baslik = kapanis_baslik_temizle(parca)
 
-        # parca.strip() sirasinda bastan karakter silinmis olabilir,
-        # gercek baslangic ofsetini yeniden hizala
+        # ONEMLI SIRALAMA: Ofset VE madde_no tespitini, baslik EKLENMEDEN
+        # ONCEKI (orijinal, sadece bu maddeye ait) parca uzerinden
+        # yapiyoruz - iki nedenden: (1) asagida eklenecek
+        # "onceki_kirpilan_baslik" metni bu maddenin SINIRLARI icinde
+        # bulunamaz (find() basarisiz olur), (2) madde_no regex'i
+        # metnin EN BASINDA "MADDE N" arar - eger baslik ONCE eklenirse
+        # metin artik "MADDE N" ile degil baslikla basladigi icin
+        # eslesme BASARISIZ olur (madde yanlislikla BASLIK/GIRIS
+        # etiketine dusuyordu - gercek testte bulundu).
         ic_ofset = tam_metin[baslangic_ofset:bitis_ofset].find(parca)
         gercek_baslangic_ofset = baslangic_ofset + ic_ofset
 
         eslesme = re.match(r"((?:" + GECICI_KELIMESI + r"\s+)?MADDE\s+\d+)", parca)
         madde_no = eslesme.group(1) if eslesme else BASLIK_GIRIS_ETIKETI
+
+        # DUZELTME: Bir ONCEKI maddeden sizip BURAYA kirpilmis olan
+        # baslik varsa (orn. "İlgili kişinin hakları" -> MADDE 11'in
+        # basligi), bu maddenin (dogru sahibinin) BASINA ekliyoruz -
+        # artik ATILMIYOR, dogru yere TASINIYOR. Bu, madde_no tespiti
+        # YAPILDIKTAN SONRA eklenir (yukaridaki not).
+        if onceki_kirpilan_baslik:
+            parca = onceki_kirpilan_baslik + "\n" + parca
+        onceki_kirpilan_baslik = kirpilan_baslik
 
         ham_maddeler.append({
             "madde_no": madde_no,

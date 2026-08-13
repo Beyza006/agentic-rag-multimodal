@@ -215,7 +215,13 @@ def belirtilen_madde_icin_cevap_uret(arama_sorgusu: str, sonuc: dict, madde_no: 
     bentler = _llm_answer.bentleri_cikar(birlesik_metin)
 
     if len(bentler) >= 2:
-        cevap = _llm_answer.kod_tabanli_nihai_cevap_olustur(arama_sorgusu, madde_no, bentler)
+        # DUZELTME (gercek testte bulunan hata - MADDE 6 ornegi): Bazi
+        # maddelerin bentlerden ONCE anlamli bir TANIM fikrasi da var
+        # (orn. "MADDE 6/1: ...ozel nitelikli kisisel veridir.") - bu,
+        # onceden SESSIZCE atlaniyordu. Simdi ayrica cikarip cevaba
+        # ekliyoruz.
+        onsel_metin = _llm_answer.onsel_tanim_metnini_cikar(birlesik_metin)
+        cevap = _llm_answer.kod_tabanli_nihai_cevap_olustur(arama_sorgusu, madde_no, bentler, onsel_metin)
     else:
         liste_prompti = _llm_answer.eksiksiz_liste_prompti_olustur(arama_sorgusu, sonuc)
         eksiksiz_liste = _llm_answer.ollama_ile_cevap_uret(liste_prompti)
@@ -249,11 +255,19 @@ def en_uygun_maddeyi_sec(arama_sorgusu: str, sonuc: dict) -> str:
     cagrisi tasarruf eder.
     """
     # Tekil maddeleri ve ilk chunk ozetlerini cikar
+    #
+    # DUZELTME (gercek testte bulunan hata): Onceden ilk 200 KARAKTER
+    # ozet olarak kullaniliyordu - ama bazi maddelerde (orn. MADDE 13)
+    # kritik ayirt edici bilgi (orn. "otuz gun" ifadesi) 200. karakterden
+    # SONRA basliyor, bu yuzden reranking LLM'i o bilgiyi HIC GORMEDEN
+    # karar veriyordu (MADDE 13 -> MADDE 14 gibi yanlis secimlere yol
+    # acti). 200 -> 400 karaktere cikararak, ilk fikranin buyuk kismini
+    # (cogu KVKK maddesinde 1-2 fikra) kapsamayi hedefliyoruz.
     tekil_maddeler = {}
     for doc, meta in zip(sonuc["documents"][0], sonuc["metadatas"][0]):
         madde = meta["madde_no"]
         if madde not in tekil_maddeler:
-            tekil_maddeler[madde] = doc[:200]  # Ilk 200 karakter ozet olarak
+            tekil_maddeler[madde] = doc[:400]  # Ilk 400 karakter ozet olarak
 
     if len(tekil_maddeler) <= 1:
         # Tek madde varsa reranking'e gerek yok

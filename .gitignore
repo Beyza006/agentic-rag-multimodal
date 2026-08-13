@@ -13,3 +13,4 @@ chroma_db/
 data/processed/*.json
 data/ocr_cikti/
 outputs/
+faz6_evaluation/degerlendirme_raporu.md 
