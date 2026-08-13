@@ -1,0 +1,31 @@
+# .dockerignore
+# -----------------
+# Bu dosyalar/klasorler Docker imajina DAHIL EDILMEZ - boylece imaj
+# kucuk kalir, gereksiz/hassas veriler imaja sizmaz.
+
+# Python sanal ortami ve derlenmis dosyalar (imaj kendi ortamini kurar)
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Git ile ilgili dosyalar (calisma zamaninda gereksiz)
+.git/
+.gitignore
+
+# Buyuk / kalici veri - bunun yerine docker-compose.yml'deki "volume"
+# baglantisi ile disaridan saglanir (bkz. Dockerfile'daki not)
+data/
+
+# Gizli bilgiler - ASLA imaja gommeyiz, ortam degiskeni olarak
+# (docker-compose.yml uzerinden) aktarilir
+.env
+
+# Faz 6 - otomatik olusan, imajla ilgisi olmayan test raporu
+faz6_evaluation/degerlendirme_raporu.md
+
+# IDE / isletim sistemi dosyalari
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,50 @@
+# docker-compose.yml
+# --------------------
+# Bu dosya, "docker compose up" tek komutuyla tum uygulamayi ayaga
+# kaldirmayi saglar - Dockerfile'daki tum ayarlari (port, ortam
+# degiskenleri, veri baglantisi) tek yerden yonetir.
+
+services:
+  agentic-rag:
+    build: .
+    ports:
+      - "7860:7860"   # Host:Container - tarayicidan http://localhost:7860 ile erisilir
+    volumes:
+      # Proje kokundeki data/ klasorunu (ChromaDB, dokumanlar, gorseller,
+      # videolar) container'in icine "canli baglanti" olarak baglar.
+      # Boylece:
+      #  - Zaten olusturdugun ChromaDB (faz1_klasik_rag/02,03,04 ile
+      #    urettigin) YENIDEN OLUSTURULMADAN dogrudan kullanilir.
+      #  - Container icinde uretilecek yeni veriler (orn. yeni yuklenen
+      #    PDF gorselleri) host'ta da kalici olarak saklanir.
+      - ./data:/app/data
+      # DUZELTME (gercek testte bulunan sorun): sentence-transformers,
+      # embedding modelini (ytu-ce-cosmos/turkish-e5-large, ~1.1-1.4 GB)
+      # HuggingFace'ten indirip container'in KENDI gecici deposuna
+      # (/root/.cache/huggingface) kaydediyordu. Bu depo, "docker
+      # compose up --build" ile container her YENIDEN OLUSTURULDUGUNDA
+      # SIFIRLANIYORDU - yani her build sonrasi bu koca modeli BASTAN
+      # indirmemiz gerekiyordu. Bu "named volume" (Docker'in kendi
+      # yonettigi, host'ta ayri bir klasor gerektirmeyen kalici depo),
+      # bu onbellegi container'in yasam donguSunden BAGIMSIZ hale
+      # getiriyor - artik SADECE ILK calistirmada indirilecek, sonraki
+      # tum "docker compose up --build" calistirmalarinda ANINDA hazir
+      # olacak.
+      - huggingface_cache:/root/.cache/huggingface
+    environment:
+      # TAVILY_API_KEY, ayni klasordeki .env dosyandan docker-compose
+      # tarafindan OTOMATIK okunur (ekstra bir ayar gerekmez) ve
+      # container'a GERCEK bir ortam degiskeni olarak aktarilir.
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+    extra_hosts:
+      # "host.docker.internal" adresi Windows/Mac'te (Docker Desktop)
+      # zaten calisir - bu satir, ayni adresin LINUX'ta da calismasini
+      # saglar (Windows/Mac'te bu satir zararsizdir, yoksayilir).
+      - "host.docker.internal:host-gateway"
+
+# "named volume" tanimi - Docker bunu kendi ic deposunda yonetir,
+# "docker compose down" ile container silinse bile bu volume KALICI
+# olarak durur (sadece "docker compose down -v" veya "docker volume rm"
+# ile ELLE silinirse kaybolur).
+volumes:
+  huggingface_cache:

@@ -1,13 +1,27 @@
-# Faz 1
+# Faz 1 - Klasik RAG
 pymupdf
 chromadb
 sentence-transformers
 langchain
 
-# Faz 2
+# Faz 2 - Agentic RAG
 langgraph
 
-# Faz 3
+# Faz 3 - Multimodal (Gorsel/Video)
 gradio
 opencv-python
 pillow
+
+# Faz 3.5 - OCR
+paddleocr
+paddlepaddle
+beautifulsoup4
+
+# Faz 4 - Web Search / Hybrid RAG
+tavily-python
+ddgs
+python-dotenv
+
+# Genel / ortak bagimliliklar
+requests
+numpy

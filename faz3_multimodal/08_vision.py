@@ -36,7 +36,7 @@ except Exception:
 
 OLLAMA_VISION_MODEL = "qwen2.5vl:7b"
 OLLAMA_METIN_MODEL = "gemma2:9b"  # yazim kontrolu icin - 06_llm_answer.py'deki ile ayni
-OLLAMA_API_URL = "http://localhost:11434/api/generate"
+OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434/api/generate")
 
 
 def resmi_base64_cevir(resim_yolu: str) -> str:
