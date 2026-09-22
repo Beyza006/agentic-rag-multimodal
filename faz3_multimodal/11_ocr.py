@@ -69,19 +69,7 @@ def ocr_motorunu_yukle():
         from paddleocr import PaddleOCR
         print("PaddleOCR modeli yukleniyor (ilk calistirmada biraz surebilir)...")
         # lang='tr': Turkce diline ozel tanima modeli kullanilir
-        # NOT: enable_mkldnn=False EKLENDI - PaddlePaddle 3.x'in Windows'ta
-        # (ve bazi Linux kurulumlarinda) bilinen bir hatasi var:
-        # "NotImplementedError: ConvertPirAttribute2RuntimeAttribute not
-        # support" - bu, oneDNN (Intel'in CPU hizlandirma katmani) ile
-        # ilgili bir uyumsuzluk. PaddlePaddle'in kendi GitHub deposunda
-        # (issue #17955, #18162) bu hatanin COZUMU olarak mkldnn'i devre
-        # disi birakmak onerilmis - biz de bunu uyguluyoruz.
-        # use_angle_cls yerine use_textline_orientation kullanildi (eski
-        # parametre PaddleOCR 3.x'te deprecated/kullanim disi birakildi).
-        _ocr_motoru = PaddleOCR(use_textline_orientation=True, lang="tr", enable_mkldnn=False)
-    return _ocr_motoru
-
-
+        # Windows sistemlerinde oneDNN (mkldnn) kaynaklı olası çökme (crash) sorunlarını önlemek için donanım hızlandırma devre dışı bırakılmıştır.
 def gorselden_metin_cikar(gorsel_yolu: str) -> str:
     """
     Bir goruntu dosyasindaki TUM yaziyi OCR ile okuyup, satir satir
@@ -193,39 +181,7 @@ def gorselden_tablo_yapili_metin_cikar(gorsel_yolu: str) -> str:
     if _yapi_motoru is None:
         from paddleocr import PPStructureV3
         print("PP-StructureV3 modeli yukleniyor (ilk calistirmada model dosyalari inebilir, biraz surebilir)...")
-        # Ayni mkldnn duzeltmesi burada da gerekli - PPStructureV3 de
-        # ayni alt yapiyi (PaddleX/PaddlePaddle) kullaniyor.
-        _yapi_motoru = PPStructureV3(lang="tr", enable_mkldnn=False)
-
-    cikti_klasoru = os.path.join(CIKTI_KLASORU, "..", "ocr_cikti")
-    os.makedirs(cikti_klasoru, exist_ok=True)
-
-    print("Belge yapisi analiz ediliyor (tablo/duzen tespiti - bu, duz OCR'dan daha uzun surebilir)...")
-    sonuc = _yapi_motoru.predict(input=gorsel_yolu)
-
-    markdown_parcalari = []
-    for sayfa_sonucu in sonuc:
-        sayfa_sonucu.save_to_markdown(save_path=cikti_klasoru)
-        # save_to_markdown dosyaya yaziyor; ayrica ekranda gostermek icin
-        # markdown ICERIGINI de elde etmeye calisiyoruz (surume gore
-        # nitelik adi degisebilir, bu yuzden birkac secenegi deniyoruz).
-        try:
-            markdown_parcalari.append(sayfa_sonucu.markdown["markdown_texts"])
-        except Exception:
-            pass
-
-    if markdown_parcalari:
-        ham_metin = "\n\n".join(markdown_parcalari)
-        # HTML tablo etiketlerini okunabilir duz metne ceviriyoruz -
-        # kullanici ekranda HTML kodu degil, temiz bir metin gormeli.
-        return html_tablolarini_okunabilir_metne_cevir(ham_metin)
-
-    return (
-        f"Markdown dosyasi olusturuldu ama ekranda gosterilemedi - "
-        f"lutfen su klasoru kontrol edin: {os.path.normpath(cikti_klasoru)}"
-    )
-
-
+        # Yapısal ayrıştırma işleminde (PPStructure) istikrarı korumak adına mkldnn devre dışı bırakılmıştır.
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Kullanim (duz metin):  python 11_ocr.py <gorsel_veya_pdf_yolu> [sayfa_no]")

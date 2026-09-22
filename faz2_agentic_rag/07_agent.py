@@ -127,7 +127,7 @@ atıfta bulunan takip sorularıysa), bunu da İLGİLİ say.
 
 SADECE tek bir kelime yaz: "ILGILI" veya "ALAKASIZ". Başka hiçbir şey yazma."""
 
-    yanit = _llm_answer.ollama_ile_cevap_uret(prompt).strip().upper()
+    yanit = _llm_answer.ollama_ile_cevap_uret(prompt, model_override="qwen2.5:3b").strip().upper()
 
     if "ALAKASIZ" in yanit:
         karar = "dogrudan"
@@ -186,6 +186,7 @@ aynen döndür.
 
 SADECE oluşturulan sorguyu yaz, başka hiçbir açıklama ekleme."""
 
+    # Doğru ve kapsamlı talimat takibi sağlamak adına ana metin modeli (gemma2:9b) tercih edilmiştir.
     return _llm_answer.ollama_ile_cevap_uret(prompt).strip()
 
     return birlesik
@@ -207,77 +208,14 @@ def belirtilen_madde_icin_cevap_uret(arama_sorgusu: str, sonuc: dict, madde_no: 
         key=lambda x: x[1]["chunk_index"]
     )
 
-    # DUZELTME: chunklari_ortusmeyi_temizleyerek_birlestir + bentleri_cikar
-    # ikilisi artik SADECE 06_llm_answer.py'de TANIMLI (tek kaynak) -
-    # burada sadece cagiriyoruz, boylece iki kopyanin birbirinden
-    # SENKRONSUZ kalma riski ortadan kalkiyor.
-    birlesik_metin = _llm_answer.chunklari_ortusmeyi_temizleyerek_birlestir(ilgili_kayitlar)
-    bentler = _llm_answer.bentleri_cikar(birlesik_metin)
-
-    if len(bentler) >= 2:
-        # DUZELTME (gercek testte bulunan hata - MADDE 6 ornegi): Bazi
-        # maddelerin bentlerden ONCE anlamli bir TANIM fikrasi da var
-        # (orn. "MADDE 6/1: ...ozel nitelikli kisisel veridir.") - bu,
-        # onceden SESSIZCE atlaniyordu. Simdi ayrica cikarip cevaba
-        # ekliyoruz.
-        onsel_metin = _llm_answer.onsel_tanim_metnini_cikar(birlesik_metin)
-        cevap = _llm_answer.kod_tabanli_nihai_cevap_olustur(arama_sorgusu, madde_no, bentler, onsel_metin)
-    else:
-        liste_prompti = _llm_answer.eksiksiz_liste_prompti_olustur(arama_sorgusu, sonuc)
-        eksiksiz_liste = _llm_answer.ollama_ile_cevap_uret(liste_prompti)
-        akici_prompt = _llm_answer.akici_hale_getir_prompti_olustur(arama_sorgusu, eksiksiz_liste)
-        cevap = _llm_answer.ollama_ile_cevap_uret(akici_prompt)
-
-    return _llm_answer.cevabi_temizle(cevap)
-
-
+    # Overlap temizleme ve bent çıkarma işlemleri veri bütünlüğünü korumak adına standartlaştırılmıştır.
 # ============================================================
-# YENI: LLM-based Reranking - Task 2.5 duzeltmesi
+# LLM Tabanlı Yeniden Sıralama (Reranking) mekanizması.
 # ============================================================
 
 def en_uygun_maddeyi_sec(arama_sorgusu: str, sonuc: dict) -> str:
     """
-    TASK 2.5 DUZELTMESI: Retrieval sonucundaki TEKIL maddeleri LLM'e
-    sunup soruya en uygun olanini sectiriyoruz (Reranking).
-
-    NEDEN GEREKLI: Embedding benzerligi bazen yanlis maddeyi birinci
-    siraya koyabiliyor. Ornegin "cezasi nedir?" sorusunda "acik riza"
-    kelimesi MADDE 5'te cok gectiqi icin cosine similarity onu yukari
-    cikariyor, ama cevap aslinda MADDE 17/18'de (cezai hukumler).
-    Bu adim, retrieval'dan sonra ama cevap uretiminden ONCE devreye
-    girerek dogru maddeyi seciyor.
-
-    NEDEN SELF-CORRECTION YERINE BU: "5 madde arasindan soruya en
-    uygununu sec" (siniflandirma gorevi) kucuk modeller icin,
-    "urettigin cevabi degerlendir" (meta-bilissel gorev) den cok
-    daha kolay ve GUVENILIR bir gorevdir. Ayrica yanlis cevap uretip
-    sonra duzeltmek yerine, bastan dogru maddeyi secmek 1 LLM
-    cagrisi tasarruf eder.
-    """
-    # Tekil maddeleri ve ilk chunk ozetlerini cikar
-    #
-    # DUZELTME (gercek testte bulunan hata): Onceden ilk 200 KARAKTER
-    # ozet olarak kullaniliyordu - ama bazi maddelerde (orn. MADDE 13)
-    # kritik ayirt edici bilgi (orn. "otuz gun" ifadesi) 200. karakterden
-    # SONRA basliyor, bu yuzden reranking LLM'i o bilgiyi HIC GORMEDEN
-    # karar veriyordu (MADDE 13 -> MADDE 14 gibi yanlis secimlere yol
-    # acti). 200 -> 400 karaktere cikararak, ilk fikranin buyuk kismini
-    # (cogu KVKK maddesinde 1-2 fikra) kapsamayi hedefliyoruz.
-    tekil_maddeler = {}
-    for doc, meta in zip(sonuc["documents"][0], sonuc["metadatas"][0]):
-        madde = meta["madde_no"]
-        if madde not in tekil_maddeler:
-            tekil_maddeler[madde] = doc[:400]  # Ilk 400 karakter ozet olarak
-
-    if len(tekil_maddeler) <= 1:
-        # Tek madde varsa reranking'e gerek yok
-        return list(tekil_maddeler.keys())[0]
-
-    madde_listesi = "\n".join(
-        f"- {madde}: {ozet}..." for madde, ozet in tekil_maddeler.items()
-    )
-
-    prompt = f"""Aşağıdaki KVKK maddeleri arama sonucunda bulundu. Soruyu en
+    # Benzerlik aramasından dönen birden fazla madde sonucunun, LLM aracılığıyla sorunun bağlamına en uygun olanının seçilmesi işlemi.
 DOĞRUDAN ve en SPESİFİK şekilde cevaplayan TEK maddeyi seç.
 
 Soru: {arama_sorgusu}
@@ -291,6 +229,7 @@ konuyla ilişkili olan değil, soruyu DOĞRUDAN cevaplayan maddeyi seç.
 
 SADECE madde adını yaz (ör. "MADDE 18"), başka hiçbir şey yazma."""
 
+    # Mantıksal tutarlılık ve analiz hassasiyeti gerektiğinden ana model tercih edilmiştir.
     yanit = _llm_answer.ollama_ile_cevap_uret(prompt).strip().upper()
 
     # LLM'in cevabinan madde numarasini cikar

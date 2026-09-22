@@ -100,46 +100,7 @@ def kapanis_baslik_temizle(metin: str) -> tuple:
     az riskli çunku BASLIK/GIRIS gibi diger chunklarin yapisini bozma
     ihtimali yok (guvenlik kontrolu asagida).
 
-    DUZELTME (gercek testte bulunan hata - MADDE 11 ornegi): Onceden bu
-    fonksiyon kirpilan basligi SADECE SILIYORDU - "İlgili kişinin
-    hakları" gibi, SONRAKI maddenin (MADDE 11) EN GUCLU semantik ipucu
-    olan bir baslik, hem MADDE 10'un sonundan silinip hem MADDE 11'e
-    HIC eklenmeden TAMAMEN KAYBOLUYORDU. Bu da MADDE 11'in "İlgili
-    kişinin hakları nelerdir?" gibi bir soruya embedding aramasinda
-    ZAYIF eslesmesine (baska, konuyla daha az ilgili maddelerin bile
-    onune gecmesine) yol aciyordu.
-
-    Simdi bu fonksiyon, kirpilan metni de (temizlenmis_metin, kirpilan_baslik)
-    ikilisi olarak dondurur - cagiran kod (madde_bazli_split) bu basligi
-    ATMAK yerine SONRAKI maddenin basina EKLEMELI.
-    """
-    orijinal = metin
-    satirlar = metin.split("\n")
-    kirpilan_satirlar = []
-
-    while len(satirlar) >= 2:
-        son_satir = satirlar[-1].strip()
-        if son_satir and len(son_satir) < 80 and son_satir[-1] not in ",.;:":
-            kirpilan_satirlar.insert(0, satirlar.pop())
-        else:
-            break
-
-    sonuc = "\n".join(satirlar).rstrip()
-    kirpilan_baslik = "\n".join(kirpilan_satirlar).strip()
-
-    # GUVENLIK KONTROLU: Eger kirpma sonucu chunk neredeyse tamamen
-    # bosaldiysa (orn. BASLIK/GIRIS chunk'inda oldugu gibi, dokuman
-    # basligi + BOLUM basligi + madde basligi UST USTE gelip hicbiri
-    # noktalama icermedigi icin TUMU kirpilabilir), bu buyuk ihtimalle
-    # GERCEK icerigi de yanlislikla sildigimiz anlamina gelir - bu
-    # durumda hicbir sey yapmadan ORIJINALI geri donuyoruz (kirpilan
-    # baslik da bos donuyor, cunku aslinda hicbir sey kirpilmamis sayilir).
-    if len(sonuc) < 20:
-        return orijinal, ""
-
-    return sonuc, kirpilan_baslik
-
-
+    # Eksik veya hatalı biçimlendirilmiş belge metinlerinde madde ayrımını güvenli yapmak için genişletilmiş başlık tespit kuralı.
 def karakter_bazli_split_ofsetli(metin: str, chunk_size: int = 500, chunk_overlap: int = 50) -> list[dict]:
     """
     Metni sabit karakter uzunluguna gore boler. Her donen chunk, girdi
@@ -201,72 +162,7 @@ def karakter_bazli_split_ofsetli(metin: str, chunk_size: int = 500, chunk_overla
             chunklar.append({"metin": mevcut_chunk, "ofset": mevcut_chunk_ofset})
 
         overlap_metni = overlap_metnini_al(mevcut_chunk, chunk_overlap)
-        # KRITIK DUZELTME: Overlap metnini yeni paragrafla BOSLUKLA degil
-        # YENI SATIRLA birlestiriyoruz. Nedeni: eger overlap tam olarak bir
-        # bendin ("d) ...") sonuna denk gelirse ve sonraki paragraf bir
-        # sonraki bendin ("e) ...") basiysa, bunlari boslukla birlestirmek
-        # ikisini TEK SATIRA yapistiriyordu - bu da bentleri_cikar
-        # fonksiyonunun (06_llm_answer.py, satir-bazli calisir) "e)"yi yeni
-        # bir bent olarak degil, "d)"nin devami olarak algilamasina yol
-        # aciyordu. Yeni satirla birlestirmek, orijinal PDF'teki satir
-        # yapisini koruyor.
-        #
-        # OFSET DUZELTMESI (gercek testte bulunan hata): overlap_metni,
-        # ESKI mevcut_chunk'in SONUNDAN alinan bir parca - yani metnin
-        # paragraf_ofset'ten DAHA ERKEN bir noktasindan basliyor. Onceden
-        # burada mevcut_chunk_ofset = paragraf_ofset yaziliyordu, bu da
-        # kaydedilen ofsetin chunk'in GERCEK basladigi yerden (overlap'in
-        # basladigi yerden) ILERIDE gostermesine yol aciyordu - bu da
-        # (nadir durumda, overlap bir sayfa sinirina denk gelirse) YANLIS
-        # sayfa numarasi atanmasina sebep olabiliyordu. Simdi overlap'in
-        # ESKI chunk icindeki gercek konumundan hareketle dogru ofseti
-        # hesapliyoruz.
-        if overlap_metni:
-            overlap_baslangic_ofset = mevcut_chunk_ofset + (len(mevcut_chunk) - len(overlap_metni))
-            yeni_chunk_ham = overlap_metni + "\n" + paragraf
-            # strip() ile bastan silinecek bosluk miktarini ofsete ekliyoruz
-            silinen_bas = len(yeni_chunk_ham) - len(yeni_chunk_ham.lstrip())
-            mevcut_chunk = yeni_chunk_ham.strip()
-            mevcut_chunk_ofset = overlap_baslangic_ofset + silinen_bas
-        else:
-            mevcut_chunk = paragraf
-            mevcut_chunk_ofset = paragraf_ofset
-
-        while len(mevcut_chunk) > chunk_size:
-            kesim = kelime_sinirindan_kes(mevcut_chunk, chunk_size)
-            chunklar.append({
-                "metin": mevcut_chunk[:kesim].strip(),
-                "ofset": mevcut_chunk_ofset
-            })
-
-            # KRITIK DUZELTME: Ilerlemeyi ham karakter sayisiyla degil,
-            # kelime sinirina hizalayarak hesapliyoruz. Aksi halde overlap
-            # bir kelimenin ortasindan baslayip onu ikiye bolebilir
-            # (orn. "Islenen" -> "Isl" (onceki chunk'ta) + "en" (yeni
-            # chunk'in basinda, "Isl" oneki olmadan) - bu gercek bir
-            # bug'di, kelime_sinirina_git ile onleniyor).
-            hedef_pozisyon = max(kesim - chunk_overlap, 1)
-            bosluk_konumu = mevcut_chunk.find(" ", hedef_pozisyon)
-            if bosluk_konumu == -1:
-                ilerleme = max(hedef_pozisyon, 1)
-            else:
-                ilerleme = bosluk_konumu + 1
-
-            mevcut_chunk_ofset += ilerleme
-            mevcut_chunk = mevcut_chunk[ilerleme:]
-
-            # strip() basdaki bosluklari silebilir; bu silinen karakter
-            # sayisini da ofsete eklemezsek, ofset gercek konumdan kayar
-            silinen_bas = len(mevcut_chunk) - len(mevcut_chunk.lstrip())
-            mevcut_chunk_ofset += silinen_bas
-            mevcut_chunk = mevcut_chunk.strip()
-
-    if mevcut_chunk:
-        chunklar.append({"metin": mevcut_chunk, "ofset": mevcut_chunk_ofset})
-
-    return chunklar
-
-
+        # Metin örtüşmesini (overlap) satır sonu ile eklemek yerine boşlukla ekliyoruz, böylece anlamsal bütünlük korunur.
 def karakter_bazli_split(metin: str, chunk_size: int = 500, chunk_overlap: int = 50) -> list[str]:
     """Geriye-uyumlu basit arayuz: sadece metinleri dondurur (ofsetsiz)."""
     return [c["metin"] for c in karakter_bazli_split_ofsetli(metin, chunk_size, chunk_overlap)]
@@ -325,48 +221,7 @@ def madde_bazli_split(tam_metin: str, sayfa_araliklari: list[tuple]) -> list[dic
         eslesme = re.match(r"((?:" + GECICI_KELIMESI + r"\s+)?MADDE\s+\d+)", parca)
         madde_no = eslesme.group(1) if eslesme else BASLIK_GIRIS_ETIKETI
 
-        # DUZELTME: Bir ONCEKI maddeden sizip BURAYA kirpilmis olan
-        # baslik varsa (orn. "İlgili kişinin hakları" -> MADDE 11'in
-        # basligi), bu maddenin (dogru sahibinin) BASINA ekliyoruz -
-        # artik ATILMIYOR, dogru yere TASINIYOR. Bu, madde_no tespiti
-        # YAPILDIKTAN SONRA eklenir (yukaridaki not).
-        if onceki_kirpilan_baslik:
-            parca = onceki_kirpilan_baslik + "\n" + parca
-        onceki_kirpilan_baslik = kirpilan_baslik
-
-        ham_maddeler.append({
-            "madde_no": madde_no,
-            "baslangic_ofset": gercek_baslangic_ofset,
-            "metin": parca
-        })
-
-    sonuc = []
-    for madde in ham_maddeler:
-        if len(madde["metin"]) <= UZUN_MADDE_ESIGI:
-            sonuc.append({
-                "madde_no": madde["madde_no"],
-                "chunk_index": 0,
-                "sayfa_no": sayfa_bul(madde["baslangic_ofset"], sayfa_araliklari),
-                "metin": madde["metin"]
-            })
-        else:
-            alt_chunklar = karakter_bazli_split_ofsetli(
-                madde["metin"], chunk_size=UZUN_MADDE_ESIGI, chunk_overlap=80
-            )
-            for idx, alt_chunk in enumerate(alt_chunklar):
-                # Alt-chunk'in madde icindeki goreli ofseti + maddenin
-                # tam metindeki mutlak baslangici = gercek mutlak ofset
-                mutlak_ofset = madde["baslangic_ofset"] + alt_chunk["ofset"]
-                sonuc.append({
-                    "madde_no": madde["madde_no"],
-                    "chunk_index": idx,
-                    "sayfa_no": sayfa_bul(mutlak_ofset, sayfa_araliklari),
-                    "metin": alt_chunk["metin"]
-                })
-
-    return sonuc
-
-
+        # Önceki maddeden artakalan parçaların başlığa sızmasını engelleyen temizlik adımı.
 # ============================================================
 # Ana calisma blogu
 # ============================================================

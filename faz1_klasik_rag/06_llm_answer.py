@@ -27,7 +27,7 @@ except Exception:
 OLLAMA_MODEL = "gemma2:9b"
 OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434/api/generate")
 
-TOP_K = 5
+TOP_K = 10
 
 
 _current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -128,11 +128,7 @@ def onsel_tanim_metnini_cikar(metin: str) -> str:
     """
     satirlar = metin.split("\n")
     bent_deseni = re.compile(r"^([a-zçğıöşü])\)\s*(.*)$")
-    # DUZELTME (gercek testte bulunan kozmetik sorun): "İKİNCİ BÖLÜM",
-    # "ÜÇÜNCÜ BÖLÜM" gibi belge yapisi basliklari da onsel metne
-    # sizip cevaba gereksiz/tuhaf bir sekilde ekleniyordu (orn. MADDE 4
-    # cevabinda "İKİNCİ BÖLÜM Kişisel Verilerin İşlenmesi..." gibi).
-    # Bu satirlari, madde icerigiyle ilgisiz oldugu icin atliyoruz.
+    # Belge hiyerarşisini belirten (Örn. "İKİNCİ BÖLÜM") yapısal başlıkların, içerik (önsel) metne dahil edilmesini engellemek için ilgili satırları filtreliyoruz.
     bolum_baslik_deseni = re.compile(
         r"^(BİRİNCİ|İKİNCİ|ÜÇÜNCÜ|DÖRDÜNCÜ|BEŞİNCİ|ALTINCI|YEDİNCİ|SEKİZİNCİ|DOKUZUNCU|ONUNCU)\s+BÖLÜM$",
         re.IGNORECASE
@@ -161,23 +157,9 @@ def kod_tabanli_nihai_cevap_olustur(soru: str, madde_no: str, bentler: list, ons
     icerikleri dogrudan kaynak metinden (regex ile cikarilmis, garantili
     dogru) geliyor.
 
-    ONEMLI (Faz 5 - Gradio testinde bulunan hata, YENIDEN EKLENDI):
-    Bentleri TEK bir "\\n" ile degil, CIFT "\\n\\n" ile birlestiriyoruz.
-    Nedeni: cevap terminalde ham metin olarak gosterildiginde tek "\\n"
-    yeterliydi, ama Gradio arayuzu cevaplari MARKDOWN olarak render
-    ediyor - Markdown kuralina gore TEK satir sonu sadece bosluk sayilir,
-    GERCEK bir satir sonu OLUSTURMAZ. Bu da bentlerin tek bir paragrafa
-    birlesip tarayici genisligine gore rastgele yerlerden kirilmasina
-    (orn. "kadar,MADDE" gibi tuhaf birlesmelere) yol aciyordu. Cift
-    "\\n\\n" (Markdown'da "yeni paragraf" anlamina gelir) bu sorunu
-    KOKTEN cozuyor - 14_gradio_app.py'deki genel ".replace()" yamasina
-    BAGIMLI KALMADAN, boylece bu fonksiyon Gradio disinda (terminal,
-    baska bir arayuz) kullanildiginda da dogru calisir.
+    Not: Kullanıcı arayüzlerinde (Gradio vb.) Markdown formatının doğru render edilebilmesi için satır birleşimlerinde çift satır atlama ("\n\n") karakterleri kullanılmaktadır. Bu durum, metin bloklarının tek paragraf altında rastgele birleşmesini önler.
 
-    YENI PARAMETRE (onsel_metin): Eger madde, bentlerden ONCE anlamli
-    bir tanim/aciklama fikrasi iceriyorsa (bkz. onsel_tanim_metnini_cikar),
-    bu metni giris cumlesinden HEMEN SONRA, bentlerden ONCE ekliyoruz -
-    boylece tanim sorularinda asil tanim artik ATLANMIYOR.
+    onsel_metin Parametresi: Madde bentlerinden önce yer alan yapısal açıklama fıkraları, giriş cümlesinden hemen sonra, asıl bentlerden ise önce eklenir; böylelikle tam bağlam korunmuş olur.
     """
     giris = giris_cumlesi_uret(soru, madde_no, len(bentler))
 
@@ -197,20 +179,20 @@ def eksiksiz_liste_prompti_olustur(soru: str, sonuc: dict) -> str:
     """
     baglam_parcalari = []
     for doc, meta in zip(sonuc["documents"][0], sonuc["metadatas"][0]):
-        baglam_parcalari.append(f"[{meta['madde_no']}, sayfa {meta['sayfa_no']}]\n{doc}")
+        baglam_parcalari.append(f"[{meta['madde_no']}]\n{doc}")
     baglam = "\n\n".join(baglam_parcalari)
 
-    return f"""Aşağıdaki KVKK madde metinlerini oku. Kullanıcının sorusuyla
-ilgili bilgiyi, kaynaktaki ile aynı doğrulukta, olduğu gibi çıkar. Hiçbir
-bilgi uydurma.
+    return f"""Aşağıdaki kanun maddesi, kullanıcının sorusuna cevap vermek üzere veri tabanından özel olarak seçilmiştir.
+Kullanıcının sorusunda geçen kelimeler metinde birebir geçmese bile (örneğin soru özel bir ihlali sorarken metin genel olarak 'suçlar' diyorsa), bu metin hukuken o sorunun cevabıdır.
+Görevin, metindeki bilgiyi/kuralı doğrudan özetleyerek çıkarmaktır. "Bilgi yok" DEME.
 
---- KANUN MADDELERİ ---
+--- KANUN MADDESİ ---
 {baglam}
 --- --- ---
 
 Soru: {soru}
 
-İlgili ham bilgi:"""
+Çıkarılan Bilgi (Doğrudan bilgi ver):"""
 
 
 def akici_hale_getir_prompti_olustur(soru: str, eksiksiz_liste: str) -> str:
@@ -224,8 +206,7 @@ kullanarak NİHAİ cevabı şu KURALLARA göre oluştur:
   sadece 1-3 cümlelik akıcı bir paragraf yaz.
 - Kaynaktaki İLGİLİ EK BAĞLAMI da (bu madde/kurum/kavram ne hakkında)
   cevaba doğal şekilde dahil et ki cevap tek başına anlamlı ve tam olsun.
-- Madde referansını cümle içinde doğal şekilde geç (örn. "MADDE 19'a
-  göre..."), ayrı bir satır/liste maddesi olarak YAZMA.
+- Madde referansını cümle içinde doğal şekilde geç (örn. "İlgili maddeye göre..."), ayrı bir satır/liste maddesi olarak YAZMA.
 - Cevabın SONUNA madde numarasını tekrar eden ayrı bir satır veya
   tırnak içinde alıntı EKLEME - madde referansı sadece cümle içinde,
   bir kez geçsin, tekrar etme.
@@ -351,39 +332,21 @@ def chunklari_ortusmeyi_temizleyerek_birlestir(ilgili_kayitlar: list) -> str:
     gorunmeyen, kesintisiz bir metin gidiyor ve bir bendin chunk
     sinirini asan kismi da dogru sekilde yakalaniyor.
 
-    NOT: Bu fonksiyon, 07_agent.py'deki belirtilen_madde_icin_cevap_uret
-    tarafindan da _llm_answer.chunklari_ortusmeyi_temizleyerek_birlestir
-    olarak cagriliyor - iki yerde AYRI AYRI tanimlanmamasi icin TEK
-    kaynak burada tutuluyor.
-    """
-    if not ilgili_kayitlar:
-        return ""
-
-    birlesik = ilgili_kayitlar[0][0]
-    for doc, _meta in ilgili_kayitlar[1:]:
-        en_uzun_ortusme = 0
-        maks_deneme = min(len(birlesik), len(doc), 200)
-        for uzunluk in range(maks_deneme, 14, -1):
-            if birlesik[-uzunluk:] == doc[:uzunluk]:
-                en_uzun_ortusme = uzunluk
-                break
-        birlesik += doc[en_uzun_ortusme:]
-
-    return birlesik
-
-
-def ollama_ile_cevap_uret(prompt: str) -> str:
+    # Not: Bu fonksiyon dış modüller tarafından (örneğin 07_agent.py) yedek (fallback) mekanizması olarak çağrılmaktadır.
+def ollama_ile_cevap_uret(prompt: str, model_override: str = None) -> str:
     """
     Prompt'u Ollama'nin yerel REST API'sine gonderir ve uretilen cevabi
     dondurur.
     """
     import requests
+    
+    kullanilacak_model = model_override if model_override else OLLAMA_MODEL
 
     try:
         yanit = requests.post(
             OLLAMA_API_URL,
             json={
-                "model": OLLAMA_MODEL,
+                "model": kullanilacak_model,
                 "prompt": prompt,
                 "stream": False,
                 "options": {
@@ -444,12 +407,7 @@ if __name__ == "__main__":
         key=lambda x: x[1]["chunk_index"]
     )
 
-    # DUZELTME: Chunk'lari once ORTUSMEYI TEMIZLEYEREK birlestirip,
-    # bentleri_cikar'i bu TEK, kesintisiz metin uzerinde BIR KEZ
-    # calistiriyoruz - boylece chunk sinirina denk gelen bentler de
-    # eksiksiz yakalanir (bkz. chunklari_ortusmeyi_temizleyerek_birlestir
-    # docstring'i - eskiden chunk-bazinda ayri isleme, MADDE 18/d gibi
-    # sinir-asan bentlerin sessizce kaybolmasina yol aciyordu).
+    # Parçaları (chunk) örtüşmeleri temizleyerek birleştirip tek, kesintisiz bir metin oluşturuyoruz. Bu sayede chunk sınırlarına denk gelen tüm ifadeler eksiksiz olarak işlenebilmektedir.
     TURKCE_ALFABE = "abcçdefgğhıijklmnoöprsştuüvyz"
 
     def alfabe_sira_no(harf):

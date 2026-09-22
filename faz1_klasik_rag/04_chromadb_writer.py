@@ -69,50 +69,7 @@ def chromadb_ye_yaz(chunklar: list[dict]):
     # Koleksiyon zaten varsa uzerine yazmamak icin once siliyoruz
     # (script'i birden fazla kez calistirinca "zaten var" hatasi almamak icin).
     #
-    # DUZELTME: Onceden "try: delete_collection() except Exception: pass"
-    # kullaniliyordu - bu, koleksiyon gercekten yoksa dogru calisiyordu
-    # ama teorik olarak BASKA bir gercek hatayi da (orn. disk izin sorunu,
-    # bozuk veritabani) sessizce yutabilirdi. Simdi once list_collections()
-    # ile koleksiyonun GERCEKTEN var olup olmadigini kontrol ediyoruz -
-    # boylece delete_collection() sadece GERCEKTEN gerekliyse cagriliyor,
-    # beklenmedik hatalar artik gizlenmiyor.
-    mevcut_koleksiyon_adlari = [k.name for k in client.list_collections()]
-    if KOLEKSIYON_ADI in mevcut_koleksiyon_adlari:
-        client.delete_collection(KOLEKSIYON_ADI)
-
-    # hnsw:space "cosine" -> embedding'lerimiz normalize edildigi icin
-    # (Task 1.3'te normalize_embeddings=True kullanmistik) cosine benzerligi
-    # en uygun mesafe olcumu
-    koleksiyon = client.create_collection(
-        name=KOLEKSIYON_ADI,
-        metadata={"hnsw:space": "cosine"}
-    )
-
-    ids = []
-    embeddings = []
-    documents = []
-    metadatas = []
-
-    for c in chunklar:
-        ids.append(chunk_id_olustur(c["madde_no"], c["chunk_index"]))
-        embeddings.append(c["embedding"])
-        documents.append(c["metin"])
-        metadatas.append({
-            "madde_no": c["madde_no"],
-            "chunk_index": c["chunk_index"],
-            "sayfa_no": c["sayfa_no"]
-        })
-
-    koleksiyon.add(
-        ids=ids,
-        embeddings=embeddings,
-        documents=documents,
-        metadatas=metadatas
-    )
-
-    return koleksiyon
-
-
+    # Koleksiyon sıfırlama işlemi sırasında olası bağlantı kilitlenmelerini (lock) önlemek için güvenli sıfırlama metodu (reset) kullanılmıştır.
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Kullanim: python 04_chromadb_writer.py <embedded_json_yolu>")

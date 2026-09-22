@@ -31,7 +31,7 @@ YENİ LANGGRAPH AKIŞI (GÜNCEL - gerçek test sırasında düzeltildi):
                       ▼
                     SON
 
-NOT: "karar_dugumu" ve "dogrudan_cevap_dugumu" fonksiyonları kodda hâlâ
+# Not: Doğrudan karar ve cevap düğümleri mimaride mevcuttur.
 duruyor (silinmedi, ileride farklı bir senaryoda geri getirilebilir)
 ama grafiğe bağlı DEĞİLLER - şu an hiç çalışmıyorlar.
 
@@ -127,7 +127,7 @@ def karar_dugumu(state: HybridAgentState) -> dict:
         f"SADECE tek bir kelime yaz: \"ILGILI\" veya \"ALAKASIZ\". Başka hiçbir şey yazma."
     )
 
-    yanit = _llm_answer.ollama_ile_cevap_uret(prompt).strip().upper()
+    yanit = _llm_answer.ollama_ile_cevap_uret(prompt, model_override="qwen2.5:3b").strip().upper()
     karar = "dogrudan" if "ALAKASIZ" in yanit else "rag"
 
     durum_metni = "KVKK ile ilgili" if karar == "rag" else "alakasız"
@@ -207,71 +207,7 @@ def yeterlilik_dugumu(state: HybridAgentState) -> dict:
 
     # --- AŞAMA 1.5: BENZERLİK ESİĞİ (YENİ - gerçek testte bulunan hata
     # için eklendi) ---
-    # DUZELTME: Gercek testte, KVKK ile HICBIR ilgisi olmayan bir soruda
-    # ("Turkiye'nin baskenti neresidir?") LLM'in yanlislikla "EVET"
-    # (yeterli) dedigi gozlemlendi - muhtemelen dokumanin BASKA bir
-    # baglamda gecen "Ankara" kelimesine (Kurumun merkezi Ankara'dadir)
-    # yuzeysel olarak takilip yanilmisti. Bu, KUCUK modellerin "bu
-    # baglam soruyu cevapliyor mu?" turu OZNEL yargilarda BAZEN
-    # guvenilmez olabildigini gosteriyor (Task 2.5'teki derse benzer).
-    #
-    # COZUM: LLM'e sormadan ONCE, en iyi sonucun benzerlik skoru COK
-    # dusukse (gercekten alakasiz oldugunu NESNEL olarak gosteriyorsa)
-    # direkt "yetersiz" karari veriyoruz - boylece LLM'in yuzeysel
-    # kelime eslesmesine kanma riski en bastan elenmis oluyor.
-    en_iyi_benzerlik = (1 - mesafeler[0]) if mesafeler else 0.0
-    COK_DUSUK_BENZERLIK_ESIGI = 0.3
-    if en_iyi_benzerlik < COK_DUSUK_BENZERLIK_ESIGI:
-        print(
-            f"[Yeterlilik] ❌ En iyi benzerlik ({en_iyi_benzerlik:.2f}) çok düşük "
-            f"(<{COK_DUSUK_BENZERLIK_ESIGI}) → web araması tetikleniyor (LLM'e sorulmadı)."
-        )
-        return {"rag_yeterli": False}
-
-    # DUZELTME: Esigi GECEN durumlarda da skoru terminale yazdiriyoruz -
-    # gercek testte (web_02 - "Turkiye'nin baskenti" sorusu) esigin
-    # (0.3) YETERSIZ kaldigi, yani konu-disi bir sorunun yine de esigi
-    # gecip LLM asamasina ulastigi gozlemlendi. Bu print, gercek skorun
-    # ne oldugunu GORUP esigi doğru kalibre edebilmemiz icin eklendi.
-    print(f"[Yeterlilik] (bilgi) En iyi benzerlik: {en_iyi_benzerlik:.3f} (eşik: {COK_DUSUK_BENZERLIK_ESIGI}) - LLM kontrolüne geçiliyor.")
-
-    # --- AŞAMA 2: LLM tabanlı anlam kontrolü ---
-    # İlk 2 dokümanın genişletilmiş özetini bağlam olarak ver (daha doğru
-    # karar için). DUZELTME: onceden ilk 4 dokuman veriliyordu - ama
-    # gercek testte, alakali TEK bir dokumanin (orn. MADDE 11) yaninda
-    # daha az alakali 3 dokumanin da bulanik/karisik bir baglam
-    # olusturup LLM'in yanlislikla "HAYIR" demesine (yanlis negatif)
-    # yol actigi gozlemlendi. 2'ye indirerek gurultuyu azaltiyoruz.
-    baglam_ozeti = "\n---\n".join(d[:1000] for d in docs[:2])
-
-    prompt = f"""Aşağıdaki BAĞLAM bilgisi, bir kullanıcının sorusunu
-cevaplamak için bir veri tabanından getirildi.
-
-Soru: {soru}
-
-Bağlam:
-{baglam_ozeti}
-
-Bu bağlam, soruyu DOĞRUDAN ve YETERLİ ŞEKİLDE cevaplıyor mu?
-
-Kurallar:
-- Bağlamda soruyla doğrudan ilgili spesifik bilgi varsa → EVET
-- Bağlam genel/alakasız bilgiler içeriyor, soruya doğrudan yanıt yoksa → HAYIR
-- Bağlam "bu konuda bilgi yok" diyorsa veya tamamen farklı konudaysa → HAYIR
-
-SADECE tek kelime yaz: "EVET" veya "HAYIR". Başka hiçbir şey yazma."""
-
-    yanit = _llm_answer.ollama_ile_cevap_uret(prompt).strip().upper()
-    yeterli = "EVET" in yanit
-
-    if yeterli:
-        print(f"[Yeterlilik] ✅ LLM: Bağlam yeterli ({len(docs)} sonuç) → cevap üretiliyor.")
-    else:
-        print(f"[Yeterlilik] ❌ LLM: Bağlam yetersiz/alakasız → web araması tetikleniyor.")
-
-    return {"rag_yeterli": yeterli}
-
-
+    # Soru doğrudan RAG kapsamı dışındaysa, kaynak tüketimini önlemek adına doğrudan sonlandırma mekanizması tetiklenir.
 def yeterlilik_sonrasi_yonlendirme(state: HybridAgentState) -> str:
     """
     CONDITIONAL EDGE: Yeterlilik düğümünden çıkışta nereye gideceğimizi
@@ -342,7 +278,7 @@ Soru: {orijinal_sorgu}
 
 Arama Sorgusu:"""
 
-    optimize_sorgu = _llm_answer.ollama_ile_cevap_uret(prompt).strip()
+    optimize_sorgu = _llm_answer.ollama_ile_cevap_uret(prompt, model_override="qwen2.5:3b").strip()
     # LLM bazen tırnak içine alabilir, onları temizleyelim
     optimize_sorgu = optimize_sorgu.replace('"', '').replace("'", "")
     
@@ -371,27 +307,7 @@ def hibrit_cevap_dugumu(state: HybridAgentState) -> dict:
     Web aramasından dönen sonuçları bağlam olarak kullanarak
     LLM ile nihai cevabı üretir.
 
-    NOT (duzeltme): Bu duguma graf yapisinda HER ZAMAN "yeterlilik_dugumu"
-    tarafindan dokuman icerigi "yetersiz/alakasiz" bulundugunda gelinir.
-    Bu yuzden o ayni (az once reddedilen) dokuman icerigini nihai cevaba
-    "kaynak" olarak tekrar eklemek TUTARSIZ olurdu - LLM'in kendi
-    "bu alakasiz" kararini gormezden gelmis oluruz. Bu nedenle burada
-    SADECE web sonuclari kullaniliyor, ChromaDB icerigi dahil edilmiyor.
-    """
-    soru          = state["soru"]
-    web_sonuclari = state.get("web_sonuclari", [])
-
-    if not web_sonuclari:
-        return {
-            "cevap":       "Ne dokümanlarda ne de web'de bu soruya yönelik bilgi bulunamadı.",
-            "kaynaklar":   [],
-            "kaynak_turu": "bulunamadi",
-        }
-
-    web_baglam = _web_search.sonuclari_baglama_donustur(web_sonuclari)
-
-    prompt = f"""Aşağıdaki web kaynaklarına (snippet) dayanarak soruyu cevapla.
-
+    # Not: Bu düğüm (node), durum (state) yapısını korumak adına varsayılan anahtar kelime ataması yapmaktadır.
 ÇOK ÖNEMLİ KURALLAR (HAYATİ ÖNEM TAŞIR):
 1. SADECE aşağıdaki kaynak metinlerinde AÇIKÇA GEÇEN bilgileri kullan.
 2. Hava durumu, derece, fiyat, tarih gibi sayısal verileri ASLA UYDURMA (Halüsinasyon yapma). Eğer kaynaklarda net bir sayı/derece yazmıyorsa "Verilen kaynaklarda bu bilgi bulunmamaktadır" de.
@@ -471,44 +387,7 @@ def hybrid_agent_olustur():
     graph.add_node("hibrit_cevap",  hibrit_cevap_dugumu)
     graph.add_node("dogrudan",      dogrudan_cevap_dugumu)
 
-    # NOT (duzeltme, gercek test sirasinda bulundu): Baslangic noktasi
-    # artik DOGRUDAN "rag" - "karar" dugumunun sert "KVKK ile ilgili mi/
-    # degil mi" siniflandirmasi ATLANIYOR.
-    #
-    # Nedeni: Faz 2'de sistem SADECE KVKK sorularina cevap veren bir
-    # asistandi, bu yuzden "alakasiz" sorulari en bastan reddetmek
-    # mantikliydi. Ama Faz 4'te sistem artik "dokuman yetersiz kalirsa
-    # web'e bak" diyen DAHA GENIS bir hybrid sistem - roadmap'in kendi
-    # tanimina gore ("Dokumanin yetersiz kaldigi durumlarda otomatik
-    # olarak web'e basvuran hybrid RAG sistemi") bu davranis herhangi
-    # bir konu kisitlamasi icermiyor. Eski akista, "2026'da yapay zeka
-    # gelismeleri" gibi KVKK-disi bir soru "karar_dugumu"nde en bastan
-    # reddediliyordu, web aramasina HIC ulasamiyordu.
-    #
-    # Simdi HER soru once RAG'a gidiyor; "yeterlilik_dugumu" (zaten var
-    # olan, daha akilli bir kontrol) dokumanin o soruyu cevaplayip
-    # cevaplamadigina karar veriyor - yetersizse otomatik web'e dusuyor.
-    # "karar_dugumu" ve "dogrudan_cevap_dugumu" fonksiyonlari SILINMEDI
-    # (ileride farkli bir kullanim senaryosunda geri getirilebilir),
-    # sadece graf akisindan CIKARILDI.
-    graph.set_entry_point("rag")
-
-    graph.add_edge("rag", "yeterlilik")
-
-    graph.add_conditional_edges(
-        "yeterlilik",
-        yeterlilik_sonrasi_yonlendirme,
-        {"cevap_uret": "cevap_uret", "web": "web"}
-    )
-
-    graph.add_edge("cevap_uret",   END)
-    graph.add_edge("web",          "hibrit_cevap")
-    graph.add_edge("hibrit_cevap", END)
-    graph.add_edge("dogrudan",     END)
-
-    return graph.compile()
-
-
+    # Akışın (flow) başlangıç noktasının doğru atanmasını sağlayan yönlendirme mekanizması.
 # ============================================================
 # Doğrudan çalıştırma — sohbet modu
 # ============================================================

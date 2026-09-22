@@ -83,7 +83,7 @@ def gorsel_sorusu_sor(resim_yolu: str, soru: str) -> str:
                     "keep_alive": "15m"      # Modeli VRAM'de tutarak yukleme suresini sifirla
                 }
             },
-            timeout=400  # gorsel isleme metne gore daha uzun surebilir, ozellikle CPU'da
+            timeout=900  # CPU üzerinde çalışan ayrıntılı görüntü işlemeleri için güvenli zaman aşımı limiti (900s).
         )
         yanit.raise_for_status()
     except requests.exceptions.ConnectionError:
@@ -187,14 +187,7 @@ if __name__ == "__main__":
         print(f"\n\u274c HATA: {hata}")
         sys.exit(1)
 
-    # NOT (05.08 - gecici geri alma): yazim_kontrolunden_gecir adimi
-    # denendi ama Task 2.5'teki Self-Correction sorunuyla AYNI nedenden
-    # (duzeltmeyi yapan model KAYNAGI - burada gorseli - gormedigi icin
-    # kor tahmin yapiyor) BAZEN dogru metni BOZDUGU icin devre disi
-    # birakildi (orn. dogru yazilmis "hükümlerin" kelimesini yanlislikla
-    # "hükmüllerin" yapmisti). Fonksiyon SILINMEDI, ileride daha buyuk
-    # bir model ile ya da farkli bir yontemle (orn. VLM'e tekrar sorup
-    # karsilastirma) tekrar denenebilir.
+    # Not: Yazım kontrolü adımı, mevcut model mimarisinde düzeltme (correction) katmanının asıl kaynağa erişimi olmaması sebebiyle oluşabilecek regresyonları önlemek amacıyla aktif olarak kullanılmamaktadır. İleri iyileştirmeler için korunmuştur.
     # cevap = yazim_kontrolunden_gecir(cevap)
 
     print("\n" + "=" * 60)
