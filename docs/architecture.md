@@ -53,18 +53,18 @@ Protocol) desteği, agent mimarisi olgunlaştıktan sonra ilerleyen aşamalarda 
 | Katman | Teknoloji | Not |
 |---|---|---|
 | Arayüz | Gradio | Sohbet + dosya yükleme + streaming + log paneli |
-| Document Processing | LangChain Document Loader / PyMuPDF / python-docx | PDF ve Word dosyalarının okunması ve metin çıkarımı |
-| Orkestrasyon | LangGraph | State/Node/Edge tabanlı agent workflow (Planner/Tool Selector/Tool Executor) |
-| Araç çağırma | Tool Calling (standart) | MCP ilerleyen aşamada değerlendirilecek |
-| LLM | Bulut API (Anthropic/OpenAI) veya Ollama (yerel) | Karşılaştırmalı değerlendirilecek |
-| VLM | Qwen2.5-VL / LLaVA — API veya Ollama üzerinden | Model seçimi prototip aşamasında |
-| Vector DB + Retriever | ChromaDB + Retriever (similarity/MMR search) | Faz 0.3'te DB kararı verildi |
-| Embedding modeli | BAAI/bge-m3 veya Sentence Transformers | Faz 1'de netleşecek |
-| Web Search | Tavily / SerpAPI | Hybrid RAG fallback için |
-| Video işleme | OpenCV (Frame Extraction + Frame Selection) | Tüm frame değil, ilgili frame(ler) seçilir |
-| Memory | Session / Persistent / User Profile / Retrieval Memory | Agent tarafından yönetilir (Faz 2.4) |
-| Değerlendirme | RAGAS / DeepEval | Faz 6 |
-| Deployment | FastAPI + Gradio + Docker Compose + Ollama (opsiyonel) | Faz 7, bkz. aşağıdaki hiyerarşi |
+| Document Processing | PyMuPDF / python-docx | PDF ve Word dosyalarının okunması ve metin çıkarımı |
+| Orkestrasyon | LangGraph | State/Node/Edge tabanlı agent workflow |
+| Araç çağırma | Tool Calling (standart) | LangGraph düğümleri aracılığıyla |
+| LLM | Ollama — `gemma2:9b` | Yerel çalışma; cevap üretme ve LLM tabanlı reranking |
+| VLM | Ollama — `qwen2.5vl:7b` | Görsel, PDF görsel analizi ve video frame analizi |
+| Vector DB + Retriever | ChromaDB + cosine similarity | Madde bazlı semantik arama |
+| Embedding modeli | `ytu-ce-cosmos/turkish-e5-large` | TR-MTEB retrieval benchmark'ta en yüksek skorlu Türkçe model |
+| Web Search | Tavily API + DuckDuckGo | Tavily API key varsa Tavily, yoksa DuckDuckGo ile otomatik fallback |
+| OCR | PaddleOCR (PPStructureV3) | Tablo ve metin içeren PDF sayfalarından yapılandırılmış metin çıkarımı |
+| Video işleme | OpenCV | Frame extraction + soru bağlamına göre frame seçimi |
+| Değerlendirme | Özel Python değerlendirme sistemi | Beklenen çıktılarla karşılaştırmalı otomatik test (faz6_evaluation/) |
+| Deployment | Gradio + Docker Compose + Ollama | Dockerfile ve docker-compose.yml ile tek komutla çalıştırılabilir |
 
 **Deployment hiyerarşisi (Faz 7):**
 ```
